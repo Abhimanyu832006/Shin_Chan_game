@@ -56,12 +56,27 @@ function wrapCanvasText(ctx, text, x, y, maxWidth, lineHeight) {
 export default function App() {
   const [gameState, setGameState] = useState('intro');
   const [completedGames, setCompletedGames] = useState({ house: false, park: false, kindergarten: false, theater: false });
-  const [profile, setProfile] = useState({ snackChoice: null, topChoice: null, quizAnswers: [], rhythmScore: null });
+  const [profile, setProfile] = useState(() => {
+    let savedScore = null;
+    try {
+      const raw = window.localStorage.getItem('girlfriendQuestTheaterScore');
+      if (raw != null && raw !== '') {
+        const parsed = Number(raw);
+        if (Number.isFinite(parsed) && parsed > 0) savedScore = Math.floor(parsed);
+      }
+    } catch {}
+    return { snackChoice: null, topChoice: null, quizAnswers: [], rhythmScore: null, theaterScore: savedScore };
+  });
   const [player, setPlayer] = useState({ x: 12 * TILE_RES, y: 8 * TILE_RES, dir: 'down', moving: false });
   
   const allCompleted = Object.values(completedGames).every(Boolean);
 
   const exitBuilding = useCallback((buildingId, profileData = {}) => {
+    if (typeof profileData.theaterScore === 'number' && Number.isFinite(profileData.theaterScore)) {
+      try {
+        window.localStorage.setItem('girlfriendQuestTheaterScore', String(Math.max(0, Math.floor(profileData.theaterScore))));
+      } catch {}
+    }
     setProfile(prev => ({ ...prev, ...profileData }));
     setCompletedGames(prev => ({ ...prev, [buildingId]: true }));
     setGameState('overworld');
@@ -91,7 +106,7 @@ export default function App() {
       {gameState === 'snack' && <SnackGame onFinish={(data) => exitBuilding('house', data)} />}
       {gameState === 'park' && <ParkGame onFinish={(data) => exitBuilding('park', data)} />}
       {gameState === 'kindergarten' && <KindergartenGame onFinish={(data) => exitBuilding('kindergarten', data)} />}
-      {gameState === 'theater' && <TheaterGame onFinish={(data) => exitBuilding('theater', data)} />}
+      {gameState === 'theater' && <TheaterGame profile={profile} onFinish={(data) => exitBuilding('theater', data)} />}
       
       {gameState === 'slides' && <SlideDeck profile={profile} />}
     </div>
@@ -475,6 +490,7 @@ function GameCanvas({
 
 function SnackGame({ onFinish }) {
   const canvasRef = useRef(null);
+  const [sceneStarted, setSceneStarted] = useState(false);
   const roundRef = useRef(0);
   const hoverRef = useRef(-1);
   const selectedRef = useRef({ side: -1, at: 0 });
@@ -482,6 +498,8 @@ function SnackGame({ onFinish }) {
   const transitionRef = useRef({ mode: 'idle', start: 0, nextRound: 0 });
   const typeRef = useRef({ full: '', shown: '', at: 0 });
   const dialogueRef = useRef({ full: '', shown: '', at: 0 });
+  const webImagesRef = useRef({ ready: false, assets: {} });
+  const continueBtnRef = useRef({ x: 0, y: 0, w: 0, h: 0 });
 
   const rounds = [
     { left: { id: 'biscuits', name: 'Chocolate Biscuits' }, right: { id: 'chips', name: 'Chips' }, line: 'Round 1. Exhibit A versus B. Pick the guilty snack.' },
@@ -493,7 +511,7 @@ function SnackGame({ onFinish }) {
   ];
 
   const setDialogue = (txt, now) => {
-    dialogueRef.current = { full: `Shin-chan: ${txt}`, shown: '', at: now };
+    dialogueRef.current = { full: txt, shown: '', at: now };
   };
 
   const setHoverType = (txt, now) => {
@@ -501,6 +519,19 @@ function SnackGame({ onFinish }) {
   };
 
   const drawFood = (ctx, id, x, y, scale, time) => {
+    const webFood = webImagesRef.current.assets[id];
+    if (webFood && webFood.complete) {
+      const size = Math.max(70, Math.min(150, 58 * scale));
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.28)';
+      ctx.shadowBlur = 10;
+      ctx.shadowOffsetY = 3;
+      ctx.drawImage(webFood, -size / 2, -size / 2, size, size);
+      ctx.restore();
+      return;
+    }
+
     ctx.save();
     ctx.translate(x, y);
     ctx.scale(scale, scale);
@@ -569,6 +600,42 @@ function SnackGame({ onFinish }) {
   };
 
   useEffect(() => {
+    let cancelled = false;
+    const urls = {
+      biscuits: 'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f36a.png',
+      chips: 'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f35f.png',
+      biryani: 'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f35b.png',
+      pizza: 'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f355.png',
+      mango: 'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f96d.png',
+      chocoIce: 'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f368.png',
+      maggi: 'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f35c.png',
+      burger: 'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f354.png',
+      samosa: 'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f95f.png',
+      chai: 'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/2615.png',
+      coffee: 'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f964.png',
+      pudding: 'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f36e.png'
+    };
+    const entries = Object.entries(urls);
+    const loaded = {};
+    let complete = 0;
+    entries.forEach(([key, url]) => {
+      const img = new Image();
+      img.onload = () => {
+        if (cancelled) return;
+        loaded[key] = img;
+        complete += 1;
+        if (complete === entries.length) webImagesRef.current = { ready: true, assets: loaded };
+      };
+      img.onerror = () => {
+        complete += 1;
+        if (complete === entries.length) webImagesRef.current = { ready: Object.keys(loaded).length > 0, assets: loaded };
+      };
+      img.src = url;
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d', { alpha: false });
@@ -587,6 +654,10 @@ function SnackGame({ onFinish }) {
     };
 
     const onMove = (event) => {
+      if (!sceneStarted) {
+        canvas.style.cursor = 'default';
+        return;
+      }
       const rect = canvas.getBoundingClientRect();
       const x = event.clientX - rect.left;
       const y = event.clientY - rect.top;
@@ -602,10 +673,20 @@ function SnackGame({ onFinish }) {
 
     const onDown = (event) => {
       const now = performance.now();
-      if (transitionRef.current.mode !== 'idle' || selectedRef.current.side !== -1) return;
       const rect = canvas.getBoundingClientRect();
       const x = event.clientX - rect.left;
       const y = event.clientY - rect.top;
+
+      if (!sceneStarted) {
+        const btn = continueBtnRef.current;
+        if (x >= btn.x && x <= btn.x + btn.w && y >= btn.y && y <= btn.y + btn.h) {
+          setSceneStarted(true);
+          setDialogue('Round 1. Exhibit A versus B. Pick the guilty snack.', now);
+        }
+        return;
+      }
+
+      if (transitionRef.current.mode !== 'idle' || selectedRef.current.side !== -1) return;
       const side = boardsRef.current.findIndex(r => x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h);
       if (side < 0) return;
       const currentRound = rounds[roundRef.current];
@@ -639,30 +720,36 @@ function SnackGame({ onFinish }) {
       ctx.clearRect(0, 0, w, h);
 
       // Background room
-      ctx.fillStyle = '#F5E8C8'; ctx.fillRect(0, 0, w, h * 0.52);
-      ctx.fillStyle = '#E8D5A8'; ctx.fillRect(0, 0, w, 26);
-      ctx.fillStyle = '#8B6230'; ctx.fillRect(0, h * 0.52 - 6, w, 6);
+      const wallGradient = ctx.createLinearGradient(0, 0, 0, h * 0.56);
+      wallGradient.addColorStop(0, '#efe3c3');
+      wallGradient.addColorStop(1, '#dcc89f');
+      ctx.fillStyle = wallGradient;
+      ctx.fillRect(0, 0, w, h * 0.56);
+      ctx.fillStyle = '#b99763';
+      ctx.fillRect(0, 0, w, 18);
+      ctx.fillStyle = '#7a5a2f';
+      ctx.fillRect(0, h * 0.56 - 5, w, 5);
       const floorCellW = Math.max(72, Math.floor(w * 0.06));
       const floorCellH = Math.max(34, Math.floor(h * 0.045));
-      for (let y = Math.floor(h * 0.52); y < h; y += floorCellH) {
+      for (let y = Math.floor(h * 0.56); y < h; y += floorCellH) {
         for (let x = 0; x < w; x += floorCellW) {
-          ctx.fillStyle = ((x / floorCellW + y / floorCellH) % 2 === 0) ? '#C8B878' : '#C0B070';
+          ctx.fillStyle = ((x / floorCellW + y / floorCellH) % 2 === 0) ? '#b79562' : '#a98958';
           ctx.fillRect(x, y, floorCellW, floorCellH);
-          ctx.strokeStyle = '#A89858'; ctx.lineWidth = 1; ctx.strokeRect(x, y, floorCellW, floorCellH);
+          ctx.strokeStyle = '#8d6f45'; ctx.lineWidth = 1; ctx.strokeRect(x, y, floorCellW, floorCellH);
         }
       }
 
       // Decorative walls
-      ctx.fillStyle = '#F0EDE0';
-      ctx.fillRect(w * 0.03, 20, w * 0.18, h * 0.47);
-      ctx.strokeStyle = '#8B6230'; ctx.lineWidth = 2; ctx.strokeRect(w * 0.03, 20, w * 0.18, h * 0.47);
-      ctx.fillStyle = '#333'; ctx.fillRect(w * 0.83, h * 0.3, w * 0.1, h * 0.09);
-      ctx.fillStyle = '#5A4A8A'; ctx.fillRect(w * 0.835, h * 0.31, w * 0.09, h * 0.07);
-      ctx.fillStyle = '#8B6230'; ctx.fillRect(w * 0.82, h * 0.39, w * 0.12, 16);
+      ctx.fillStyle = '#f4ecd7';
+      ctx.fillRect(w * 0.05, 30, w * 0.15, h * 0.34);
+      ctx.strokeStyle = '#8B6230'; ctx.lineWidth = 2; ctx.strokeRect(w * 0.05, 30, w * 0.15, h * 0.34);
+      ctx.fillStyle = '#f4ecd7';
+      ctx.fillRect(w * 0.8, 30, w * 0.15, h * 0.34);
+      ctx.strokeStyle = '#8B6230'; ctx.lineWidth = 2; ctx.strokeRect(w * 0.8, 30, w * 0.15, h * 0.34);
 
       // Banner
       ctx.save();
-      ctx.translate(w * 0.5, h * 0.15);
+      ctx.translate(w * 0.5, h * 0.12);
       ctx.rotate(-2 * Math.PI / 180);
       ctx.fillStyle = '#FFFDE0'; ctx.fillRect(-w * 0.12, -18, w * 0.24, 36);
       ctx.fillStyle = '#CC2200'; ctx.beginPath(); ctx.arc(-w * 0.12, -18, 4, 0, Math.PI * 2); ctx.fill(); ctx.beginPath(); ctx.arc(w * 0.12, -18, 4, 0, Math.PI * 2); ctx.fill();
@@ -731,6 +818,21 @@ function SnackGame({ onFinish }) {
         }
         const foodScale = Math.max(1.6, Math.min(boardW / 180, boardH / 150));
         drawFood(ctx, item.id, cx, by + boardH * 0.57, foodScale, time);
+
+        // Always-visible food label under each item so names are not hover-only.
+        ctx.fillStyle = 'rgba(10,10,30,0.85)';
+        ctx.fillRect(bx + 16, by + boardH - 54, boardW - 32, 34);
+        ctx.strokeStyle = hover ? '#FFD700' : '#8B6230';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(bx + 16, by + boardH - 54, boardW - 32, 34);
+        ctx.fillStyle = '#FFFDE0';
+        ctx.font = `${Math.max(9, fs)}px "Press Start 2P"`;
+        const label = item.name.toUpperCase();
+        const maxLabelW = boardW - 56;
+        const labelW = ctx.measureText(label).width;
+        const labelX = bx + 16 + Math.max(8, (maxLabelW - labelW) / 2);
+        ctx.fillText(label, labelX, by + boardH - 31);
+
         if (selectedRef.current.side === side) {
           const age = Math.min(1, (time - selectedRef.current.at) / 160);
           const scale = 2 - age;
@@ -755,7 +857,7 @@ function SnackGame({ onFinish }) {
       ctx.fillText(`ROUND ${roundRef.current + 1}/${rounds.length}`, w - 174, 36);
 
       // Typewriter hover line
-      if (typeRef.current.full) {
+      if (sceneStarted && typeRef.current.full) {
         if (time >= typeRef.current.at && typeRef.current.shown.length < typeRef.current.full.length) {
           typeRef.current.shown = typeRef.current.full.slice(0, typeRef.current.shown.length + 1);
           typeRef.current.at = time + 24;
@@ -770,17 +872,71 @@ function SnackGame({ onFinish }) {
         dialogueRef.current.at = time + 14;
       }
       const boxX = 16;
-      const boxY = h - 108;
+      const boxY = h - 150;
       const boxW = w - 32;
-      const boxH = 92;
+      const boxH = 134;
       ctx.fillStyle = 'rgba(10,10,30,0.93)'; ctx.fillRect(boxX, boxY, boxW, boxH);
       ctx.strokeStyle = '#FFF'; ctx.lineWidth = 2; ctx.strokeRect(boxX, boxY, boxW, boxH);
       ctx.strokeStyle = '#333355'; ctx.lineWidth = 1; ctx.strokeRect(boxX + 4, boxY + 4, boxW - 8, boxH - 8);
-      ctx.fillStyle = '#ffebc8'; ctx.fillRect(boxX + 12, boxY + 18, 16, 16);
-      ctx.fillStyle = '#111'; ctx.fillRect(boxX + 15, boxY + 22, 3, 3); ctx.fillRect(boxX + 22, boxY + 22, 3, 3);
-      ctx.fillStyle = '#c22'; ctx.fillRect(boxX + 16, boxY + 29, 8, 2);
-      ctx.fillStyle = '#FFD700'; ctx.font = `${Math.max(7, fs - 2)}px "Press Start 2P"`; ctx.fillText('Shin-chan:', boxX + 34, boxY + 30);
-      ctx.fillStyle = '#FFF'; wrapCanvasText(ctx, dialogueRef.current.shown, boxX + 88, boxY + 29, boxW - 108, Math.max(12, fs + 3));
+      ctx.fillStyle = '#ffebc8'; ctx.fillRect(boxX + 16, boxY + 20, 22, 22);
+      ctx.fillStyle = '#111'; ctx.fillRect(boxX + 19, boxY + 25, 4, 4); ctx.fillRect(boxX + 29, boxY + 25, 4, 4);
+      ctx.fillStyle = '#c22'; ctx.fillRect(boxX + 21, boxY + 33, 10, 3);
+      ctx.fillStyle = '#FFD700'; ctx.font = `${Math.max(10, fs + 1)}px "Press Start 2P"`; ctx.fillText('SHIN-CHAN', boxX + 46, boxY + 36);
+      ctx.fillStyle = '#FFF';
+      ctx.font = `${Math.max(10, fs)}px "Press Start 2P"`;
+      wrapCanvasText(ctx, dialogueRef.current.shown, boxX + 22, boxY + 68, boxW - 44, Math.max(18, fs + 8));
+
+      if (!sceneStarted) {
+        ctx.fillStyle = 'rgba(8, 10, 20, 0.76)';
+        ctx.fillRect(0, 0, w, h);
+
+        const panelW = Math.min(980, w * 0.86);
+        const panelH = Math.min(520, h * 0.72);
+        const panelX = (w - panelW) / 2;
+        const panelY = (h - panelH) / 2;
+        ctx.fillStyle = 'rgba(12, 12, 34, 0.97)';
+        ctx.fillRect(panelX, panelY, panelW, panelH);
+        ctx.strokeStyle = '#FFD700';
+        ctx.lineWidth = 4;
+        ctx.strokeRect(panelX, panelY, panelW, panelH);
+
+        ctx.fillStyle = '#FFD700';
+        ctx.font = `${Math.max(15, Math.floor(fs * 1.8))}px "Press Start 2P"`;
+        ctx.fillText('SHIN\'S HOUSE: SNACK COURT', panelX + 28, panelY + 58);
+
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = `${Math.max(10, Math.floor(fs * 1.2))}px "Press Start 2P"`;
+        wrapCanvasText(
+          ctx,
+          'Story: Shin-chan has turned his house into a dramatic snack courtroom. Every round has two exhibits. Your job is to pick one snack each round and stamp it as guilty.',
+          panelX + 28,
+          panelY + 110,
+          panelW - 56,
+          Math.max(24, Math.floor(fs * 1.8))
+        );
+        wrapCanvasText(
+          ctx,
+          'How to play: Click one food card in each round. The game will move to the next matchup automatically.',
+          panelX + 28,
+          panelY + 250,
+          panelW - 56,
+          Math.max(24, Math.floor(fs * 1.8))
+        );
+
+        const btnW = Math.min(360, panelW * 0.5);
+        const btnH = 72;
+        const btnX = panelX + (panelW - btnW) / 2;
+        const btnY = panelY + panelH - 108;
+        continueBtnRef.current = { x: btnX, y: btnY, w: btnW, h: btnH };
+        ctx.fillStyle = '#ffb347';
+        ctx.fillRect(btnX, btnY, btnW, btnH);
+        ctx.strokeStyle = '#3b1f00';
+        ctx.lineWidth = 3;
+        ctx.strokeRect(btnX, btnY, btnW, btnH);
+        ctx.fillStyle = '#111';
+        ctx.font = `${Math.max(12, Math.floor(fs * 1.4))}px "Press Start 2P"`;
+        ctx.fillText('CLICK TO CONTINUE', btnX + 28, btnY + 44);
+      }
     };
 
     frameId = requestAnimationFrame(render);
@@ -791,7 +947,7 @@ function SnackGame({ onFinish }) {
       canvas.removeEventListener('pointerdown', onDown);
       canvas.style.cursor = 'default';
     };
-  }, [onFinish]);
+  }, [onFinish, sceneStarted]);
 
   return <canvas ref={canvasRef} className="interior-canvas" />;
 }
@@ -802,7 +958,7 @@ function ParkGame({ onFinish }) {
     'Eating Maggi at 2AM', 'Texting first after 3 days of silence', 'Going on a random trip with no plan',
     'Watching 6 episodes in one sitting', 'Sending a voice note instead of typing', 'Leaving without saying bye', 'Rewatching the same show a 3rd time'
   ]);
-  const dragRef = useRef({ index: -1, offsetY: 0, active: false });
+  const dragRef = useRef({ index: -1, offsetY: 0, active: false, pointerId: null });
   const [hoverDone, setHoverDone] = useState(false);
 
   useEffect(() => {
@@ -838,30 +994,63 @@ function ParkGame({ onFinish }) {
       const { x, y } = getPos(event);
       const index = hitNote(x, y);
       if (index >= 0) {
-        dragRef.current = { index, offsetY: y - (canvas.height * 0.18 + 40 + index * 66), active: true };
-      } else if (hoverDone) {
-        onFinish({ topChoice: boardItems.current[0] });
+        dragRef.current = { index, offsetY: y - (canvas.height * 0.18 + 40 + index * 66), active: true, pointerId: event.pointerId };
+        if (typeof canvas.setPointerCapture === 'function') {
+          try { canvas.setPointerCapture(event.pointerId); } catch {}
+        }
+        canvas.style.cursor = 'grabbing';
       }
     };
 
     const pointerMove = (event) => {
-      if (!dragRef.current.active) return;
-      const { y } = getPos(event);
-      const base = canvas.height * 0.18 + 40;
-      const noteY = Math.max(base, Math.min(base + 6 * 66, y - dragRef.current.offsetY));
-      const current = [...boardItems.current];
-      const moving = current.splice(dragRef.current.index, 1)[0];
-      const targetIndex = Math.max(0, Math.min(current.length, Math.round((noteY - base) / 66)));
-      current.splice(targetIndex, 0, moving);
-      boardItems.current = current;
-      dragRef.current.index = targetIndex;
+      if (dragRef.current.active && dragRef.current.pointerId != null && event.pointerId !== dragRef.current.pointerId) return;
+      if (dragRef.current.active) {
+        const { y } = getPos(event);
+        const base = canvas.height * 0.18 + 40;
+        const noteY = Math.max(base, Math.min(base + 6 * 66, y - dragRef.current.offsetY));
+        const current = [...boardItems.current];
+        const moving = current.splice(dragRef.current.index, 1)[0];
+        const targetIndex = Math.max(0, Math.min(current.length, Math.round((noteY - base) / 66)));
+        current.splice(targetIndex, 0, moving);
+        boardItems.current = current;
+        dragRef.current.index = targetIndex;
+        canvas.style.cursor = 'grabbing';
+        return;
+      }
+
+      const { x, y } = getPos(event);
+      const hit = hitNote(x, y);
+      if (hit >= 0) {
+        canvas.style.cursor = 'grab';
+      } else if (x > canvas.width * 0.81 && x < canvas.width * 0.81 + 120 && y > canvas.height * 0.82 && y < canvas.height * 0.82 + 42) {
+        canvas.style.cursor = 'pointer';
+      } else {
+        canvas.style.cursor = 'default';
+      }
     };
 
-    const pointerUp = () => { dragRef.current.active = false; };
+    const pointerUp = (event) => {
+      if (dragRef.current.pointerId != null && event.pointerId != null && dragRef.current.pointerId !== event.pointerId) return;
+      if (dragRef.current.active && typeof canvas.releasePointerCapture === 'function' && dragRef.current.pointerId != null) {
+        try { canvas.releasePointerCapture(dragRef.current.pointerId); } catch {}
+      }
+      dragRef.current = { index: -1, offsetY: 0, active: false, pointerId: null };
+      canvas.style.cursor = 'default';
+    };
+
+    const doneClick = (event) => {
+      const { y } = getPos(event);
+      const { x } = getPos(event);
+      if (!dragRef.current.active && x > canvas.width * 0.81 && x < canvas.width * 0.81 + 120 && y > canvas.height * 0.82 && y < canvas.height * 0.82 + 42) {
+        onFinish({ topChoice: boardItems.current[0] });
+      }
+    };
 
     canvas.addEventListener('pointerdown', pointerDown);
     canvas.addEventListener('pointermove', pointerMove);
-    window.addEventListener('pointerup', pointerUp);
+    canvas.addEventListener('pointerup', pointerUp);
+    canvas.addEventListener('pointercancel', pointerUp);
+    canvas.addEventListener('pointerdown', doneClick);
 
     let frameId = 0;
     const render = (time) => {
@@ -928,26 +1117,22 @@ function ParkGame({ onFinish }) {
       const rect = canvas.getBoundingClientRect();
       const x = e.clientX - rect.left;
       const y = e.clientY - rect.top;
-      setHoverDone(x > canvas.width * 0.81 && x < canvas.width * 0.81 + 120 && y > canvas.height * 0.82 && y < canvas.height * 0.82 + 42);
+      const doneHover = x > canvas.width * 0.81 && x < canvas.width * 0.81 + 120 && y > canvas.height * 0.82 && y < canvas.height * 0.82 + 42;
+      setHoverDone(doneHover);
     };
     canvas.addEventListener('pointermove', moveHover);
-    canvas.addEventListener('pointerdown', (e) => {
-      const rect = canvas.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
-      if (x > canvas.width * 0.81 && x < canvas.width * 0.81 + 120 && y > canvas.height * 0.82 && y < canvas.height * 0.82 + 42) {
-        onFinish({ topChoice: boardItems.current[0] });
-      }
-    });
     return () => {
       cancelAnimationFrame(frameId);
       window.removeEventListener('resize', resize);
-      window.removeEventListener('pointerup', pointerUp);
       canvas.removeEventListener('pointerdown', pointerDown);
+      canvas.removeEventListener('pointerdown', doneClick);
       canvas.removeEventListener('pointermove', pointerMove);
+      canvas.removeEventListener('pointerup', pointerUp);
+      canvas.removeEventListener('pointercancel', pointerUp);
       canvas.removeEventListener('pointermove', moveHover);
+      canvas.style.cursor = 'default';
     };
-  }, [hoverDone, onFinish]);
+  }, [onFinish]);
 
   return <canvas ref={canvasRef} className="interior-canvas" />;
 }
@@ -955,6 +1140,8 @@ function ParkGame({ onFinish }) {
 function KindergartenGame({ onFinish }) {
   const canvasRef = useRef(null);
   const audioCtxRef = useRef(null);
+  const typingPoolRef = useRef([]);
+  const typingPoolIndexRef = useRef(0);
   const optionRectsRef = useRef([]);
   const hoverRef = useRef(-1);
   const selectedRef = useRef({ index: -1, start: 0 });
@@ -1048,30 +1235,55 @@ function KindergartenGame({ onFinish }) {
     return audioCtxRef.current;
   };
 
+  useEffect(() => {
+    const src = 'https://actions.google.com/sounds/v1/foley/typewriter_key.ogg';
+    const pool = Array.from({ length: 8 }, () => {
+      const a = new Audio(src);
+      a.preload = 'auto';
+      a.volume = 0.3;
+      a.playbackRate = 0.78;
+      return a;
+    });
+    typingPoolRef.current = pool;
+    return () => {
+      typingPoolRef.current.forEach(a => {
+        a.pause();
+        a.src = '';
+      });
+      typingPoolRef.current = [];
+    };
+  }, []);
+
   const playScratch = () => {
+    const pool = typingPoolRef.current;
+    if (pool.length > 0) {
+      const idx = typingPoolIndexRef.current % pool.length;
+      typingPoolIndexRef.current += 1;
+      const snd = pool[idx];
+      try {
+        snd.currentTime = 0;
+        snd.playbackRate = 0.74 + Math.random() * 0.08;
+        const p = snd.play();
+        if (p && typeof p.catch === 'function') p.catch(() => {});
+        return;
+      } catch {}
+    }
+
     const audio = ensureAudio();
     if (!audio) return;
     const now = audio.currentTime;
     const osc = audio.createOscillator();
-    const snap = audio.createOscillator();
     const gain = audio.createGain();
     osc.type = 'square';
-    snap.type = 'triangle';
-    const base = 760 + Math.random() * 240;
+    const base = 220 + Math.random() * 70;
     osc.frequency.setValueAtTime(base, now);
-    osc.frequency.exponentialRampToValueAtTime(base * 0.72, now + 0.03);
-    snap.frequency.setValueAtTime(base * 2.2, now);
-    snap.frequency.exponentialRampToValueAtTime(base * 1.4, now + 0.015);
+    osc.frequency.exponentialRampToValueAtTime(base * 0.64, now + 0.05);
     gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.linearRampToValueAtTime(0.05, now + 0.004);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.045);
-    osc.connect(gain);
-    snap.connect(gain);
-    gain.connect(audio.destination);
+    gain.gain.linearRampToValueAtTime(0.04, now + 0.005);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.06);
+    osc.connect(gain).connect(audio.destination);
     osc.start(now);
-    snap.start(now);
-    osc.stop(now + 0.05);
-    snap.stop(now + 0.022);
+    osc.stop(now + 0.07);
   };
 
   const setDialogue = (text, now) => {
@@ -1345,7 +1557,7 @@ function KindergartenGame({ onFinish }) {
   return <canvas ref={canvasRef} className="interior-canvas" />;
 }
 
-function TheaterGame({ onFinish }) {
+function TheaterGame({ profile, onFinish }) {
   const canvasRef = useRef(null);
   const runningRef = useRef(true);
   const enemiesRef = useRef([]);
@@ -1353,7 +1565,14 @@ function TheaterGame({ onFinish }) {
   const particlesRef = useRef([]);
   const keysRef = useRef({});
   const playerRef = useRef({ x: 0.5, cooldown: 0, lives: 3, combo: 0 });
-  const stateRef = useRef({ score: 0, hits: 0, miss: 0, timeLeft: 35, wave: 1, message: 'Action Kamen defense live. Move, aim, and shoot.' });
+  const niggeshScoreRef = useRef(0);
+  if (niggeshScoreRef.current === 0) niggeshScoreRef.current = 3800 + Math.floor(Math.random() * 1200);
+  const targetScore = useMemo(() => {
+    const own = Number(profile?.theaterScore);
+    return Number.isFinite(own) && own > 0 ? Math.floor(own) : niggeshScoreRef.current;
+  }, [profile]);
+  const introRef = useRef({ active: true, until: performance.now() + 3200 });
+  const stateRef = useRef({ score: 0, hits: 0, miss: 0, timeLeft: 40, wave: 1, message: `Niggesh scored ${targetScore}. Beat that.` });
   const lastRef = useRef(performance.now());
   const spawnTimerRef = useRef(0);
   const timerRef = useRef(0);
@@ -1365,9 +1584,10 @@ function TheaterGame({ onFinish }) {
     clearInterval(timerRef.current);
     const s = stateRef.current.score;
     const lives = playerRef.current.lives;
-    const rank = s > 5000 && lives >= 2 ? 'high' : s > 2400 ? 'mid' : 'low';
-    onFinish({ rhythmScore: rank });
-  }, [onFinish]);
+    const beatTarget = s >= targetScore;
+    const rank = beatTarget || (s > 5000 && lives >= 2) ? 'high' : s > 2400 ? 'mid' : 'low';
+    onFinish({ rhythmScore: rank, theaterScore: s, theaterTarget: targetScore, beatNiggesh: beatTarget });
+  }, [onFinish, targetScore]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -1407,6 +1627,7 @@ function TheaterGame({ onFinish }) {
 
     const spawnEnemy = () => {
       if (!runningRef.current) return;
+      if (introRef.current.active) return;
       const wave = stateRef.current.wave;
       const typeRoll = Math.random();
       const type = typeRoll < 0.15 ? 'tank' : typeRoll < 0.5 ? 'zigzag' : 'grunt';
@@ -1415,8 +1636,8 @@ function TheaterGame({ onFinish }) {
       enemiesRef.current.push({
         x: 0.1 + Math.random() * 0.8,
         y: -0.08,
-        w: type === 'tank' ? 38 : 26,
-        h: type === 'tank' ? 34 : 24,
+        w: type === 'tank' ? 52 : 34,
+        h: type === 'tank' ? 46 : 32,
         hp,
         type,
         speed,
@@ -1441,26 +1662,29 @@ function TheaterGame({ onFinish }) {
     spawnRate();
     timerRef.current = window.setInterval(() => {
       if (!runningRef.current) return;
+      if (introRef.current.active) return;
       stateRef.current.timeLeft -= 1;
-      if (stateRef.current.timeLeft === 24) { stateRef.current.wave = 2; stateRef.current.message = 'Wave 2: speed increased.'; spawnRate(); }
-      if (stateRef.current.timeLeft === 12) { stateRef.current.wave = 3; stateRef.current.message = 'Final wave: hold your line.'; spawnRate(); }
+      if (stateRef.current.timeLeft === 27) { stateRef.current.wave = 2; stateRef.current.message = 'Wave 2: speed increased.'; spawnRate(); }
+      if (stateRef.current.timeLeft === 14) { stateRef.current.wave = 3; stateRef.current.message = 'Final wave: hold your line.'; spawnRate(); }
       if (stateRef.current.timeLeft <= 0 || playerRef.current.lives <= 0) finish();
     }, 1000);
 
     const drawEnemy = (enemy, w, h, time) => {
       const x = enemy.x * w;
       const y = enemy.y * h;
+      const ew = enemy.w;
+      const eh = enemy.h;
       ctx.save();
       ctx.translate(x, y);
       const blink = Math.floor(time / 180) % 2 === 0;
       if (enemy.type === 'tank') {
-        ctx.fillStyle = '#1C1C1C'; ctx.fillRect(-19, -16, 38, 32);
-        ctx.fillStyle = '#CC0000'; ctx.fillRect(-16, -14, 32, 10);
-        ctx.fillStyle = blink ? '#FFF' : '#FFAAAA'; ctx.fillRect(-10, -2, 6, 4); ctx.fillRect(4, -2, 6, 4);
+        ctx.fillStyle = '#1C1C1C'; ctx.fillRect(-ew / 2, -eh / 2, ew, eh);
+        ctx.fillStyle = '#CC0000'; ctx.fillRect(-ew * 0.42, -eh * 0.44, ew * 0.84, eh * 0.34);
+        ctx.fillStyle = blink ? '#FFF' : '#FFAAAA'; ctx.fillRect(-ew * 0.26, -eh * 0.08, ew * 0.16, eh * 0.12); ctx.fillRect(ew * 0.1, -eh * 0.08, ew * 0.16, eh * 0.12);
       } else {
-        ctx.fillStyle = '#111'; ctx.fillRect(-13, -12, 26, 24);
-        ctx.fillStyle = '#CC0000'; ctx.fillRect(-10, -10, 20, 8);
-        ctx.fillStyle = blink ? '#FFF' : '#FFB6B6'; ctx.fillRect(-7, -1, 4, 3); ctx.fillRect(3, -1, 4, 3);
+        ctx.fillStyle = '#111'; ctx.fillRect(-ew / 2, -eh / 2, ew, eh);
+        ctx.fillStyle = '#CC0000'; ctx.fillRect(-ew * 0.38, -eh * 0.42, ew * 0.76, eh * 0.32);
+        ctx.fillStyle = blink ? '#FFF' : '#FFB6B6'; ctx.fillRect(-ew * 0.26, -eh * 0.05, ew * 0.16, eh * 0.12); ctx.fillRect(ew * 0.1, -eh * 0.05, ew * 0.16, eh * 0.12);
       }
       ctx.restore();
     };
@@ -1510,13 +1734,20 @@ function TheaterGame({ onFinish }) {
 
       const p = playerRef.current;
       const s = stateRef.current;
+      const introActive = introRef.current.active && time < introRef.current.until;
+      if (introRef.current.active && !introActive) {
+        introRef.current.active = false;
+        s.message = `Target locked: ${targetScore}. Good luck.`;
+      }
 
-      if (keysRef.current['ArrowLeft'] || keysRef.current['KeyA']) p.x -= dt * 0.6;
-      if (keysRef.current['ArrowRight'] || keysRef.current['KeyD']) p.x += dt * 0.6;
-      if (keysRef.current['Space']) {
-        if (p.cooldown <= 0) {
-          p.cooldown = 0.1;
-          bulletsRef.current.push({ x: p.x, y: 0.82, vy: -1.1, w: 6, h: 18 });
+      if (!introActive) {
+        if (keysRef.current['ArrowLeft'] || keysRef.current['KeyA']) p.x -= dt * 0.6;
+        if (keysRef.current['ArrowRight'] || keysRef.current['KeyD']) p.x += dt * 0.6;
+        if (keysRef.current['Space']) {
+          if (p.cooldown <= 0) {
+            p.cooldown = 0.1;
+            bulletsRef.current.push({ x: p.x, y: 0.82, vy: -1.1, w: 6, h: 18 });
+          }
         }
       }
       p.x = Math.max(0.08, Math.min(0.92, p.x));
@@ -1602,24 +1833,43 @@ function TheaterGame({ onFinish }) {
       // HUD + message
       const hudFont = Math.max(10, Math.floor(w * 0.011));
       const panelW = Math.max(260, w * 0.23);
-      ctx.fillStyle = 'rgba(8,8,12,0.9)'; ctx.fillRect(18, 16, panelW, 122);
-      ctx.strokeStyle = '#FFF'; ctx.strokeRect(18, 16, panelW, 122);
+      ctx.fillStyle = 'rgba(8,8,12,0.9)'; ctx.fillRect(18, 16, panelW, 150);
+      ctx.strokeStyle = '#FFF'; ctx.strokeRect(18, 16, panelW, 150);
       ctx.fillStyle = '#FFF'; ctx.font = `${hudFont}px "Press Start 2P"`;
       ctx.fillText(`SCORE ${s.score}`, 30, 42);
       ctx.fillText(`HITS ${s.hits}`, 30, 68);
       ctx.fillText(`TIME ${s.timeLeft}s`, 30, 94);
       ctx.fillText(`WAVE ${s.wave}`, 30, 120);
+      ctx.fillText(`TARGET ${targetScore}`, 30, 146);
 
-      ctx.fillStyle = 'rgba(8,8,12,0.9)'; ctx.fillRect(w - 210, 16, 192, 68);
-      ctx.strokeStyle = '#FFD700'; ctx.strokeRect(w - 210, 16, 192, 68);
+      ctx.fillStyle = 'rgba(8,8,12,0.9)'; ctx.fillRect(w - 210, 16, 192, 94);
+      ctx.strokeStyle = '#FFD700'; ctx.strokeRect(w - 210, 16, 192, 94);
       ctx.fillStyle = '#FFD700'; ctx.font = `${Math.max(9, hudFont - 1)}px "Press Start 2P"`;
       ctx.fillText(`LIVES ${p.lives}`, w - 194, 42);
       ctx.fillText(`COMBO ${p.combo}`, w - 194, 66);
+      ctx.fillText(`NIGGESH ${targetScore}`, w - 194, 90);
 
       ctx.fillStyle = 'rgba(5,7,16,0.92)'; ctx.fillRect(18, h - 92, w - 36, 72);
       ctx.strokeStyle = '#FFD700'; ctx.strokeRect(18, h - 92, w - 36, 72);
       ctx.fillStyle = '#FFF'; ctx.font = `${Math.max(9, hudFont - 1)}px "Press Start 2P"`;
       wrapCanvasText(ctx, `Shin-chan: ${s.message} Move: A/D or Arrow Keys. Shoot: Space or Click.`, 30, h - 58, w - 58, Math.max(13, hudFont + 2));
+
+      if (introActive) {
+        ctx.fillStyle = 'rgba(4, 4, 12, 0.74)';
+        ctx.fillRect(0, 0, w, h);
+        ctx.fillStyle = '#ffd44d';
+        ctx.font = `${Math.max(18, Math.floor(w * 0.028))}px "Press Start 2P"`;
+        ctx.fillText(`Niggesh scored ${targetScore}`, w * 0.14, h * 0.44);
+        ctx.fillStyle = '#ffffff';
+        ctx.font = `${Math.max(14, Math.floor(w * 0.018))}px "Press Start 2P"`;
+        ctx.fillText('How? Let us see if you can beat him.', w * 0.14, h * 0.5);
+      }
+
+      if (!introActive && s.score >= targetScore) {
+        s.message = 'Target beaten. Action Kamen approves.';
+        finish();
+        return;
+      }
 
       if (s.timeLeft <= 0) finish();
     };
