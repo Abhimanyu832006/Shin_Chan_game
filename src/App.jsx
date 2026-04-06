@@ -3,6 +3,7 @@ import confetti from 'canvas-confetti';
 import './index.css';
 import { SPRITEMAP, initSprites } from './sprites';
 import angryEmoji from './assets/image.png';
+import keyboardTypingMp3 from './assets/virtualzero-mechanical-keyboard-typing-hd-372290.mp3';
 
 // Initialize
 initSprites();
@@ -67,6 +68,8 @@ export default function App() {
     } catch {}
     return { snackChoice: null, topChoice: null, quizAnswers: [], rhythmScore: null, theaterScore: savedScore };
   });
+  const [act2Profile, setAct2Profile] = useState(null);
+  const [act2Theme, setAct2Theme] = useState(null);
   const [player, setPlayer] = useState({ x: 12 * TILE_RES, y: 8 * TILE_RES, dir: 'down', moving: false });
   
   const allCompleted = Object.values(completedGames).every(Boolean);
@@ -86,6 +89,28 @@ export default function App() {
   const enterKindergarten = useCallback(() => setGameState('kindergarten'), []);
   const enterTheater = useCallback(() => setGameState('theater'), []);
 
+  const startAct2 = useCallback(() => {
+    const normalized = {
+      snackChoice: profile.snackChoice || 'Maggi',
+      topChoice: profile.topChoice || 'Going on a random trip with no plan',
+      quizAnswers: Array.isArray(profile.quizAnswers) && profile.quizAnswers.length > 0 ? profile.quizAnswers : ['B', 'C', 'A', 'D', 'A', 'C', 'D'],
+      rhythmScore: profile.rhythmScore || 'mid',
+      theaterScore: profile.theaterScore ?? null,
+      theaterTarget: profile.theaterTarget ?? null,
+      beatNiggesh: Boolean(profile.beatNiggesh),
+    };
+
+    // Temporary audit block requested: dump final profile before ACT 2 starts.
+    console.log('=== PLAYER PROFILE DUMP ===');
+    console.log(JSON.stringify(normalized, null, 2));
+
+    const builtTheme = buildTheme(normalized);
+    window.playerProfile = normalized;
+    setAct2Profile(normalized);
+    setAct2Theme(builtTheme);
+    setGameState('slides');
+  }, [profile]);
+
   const worldLighting = (gameState === 'overworld' || gameState === 'transition') ? 'kasukabe-lighting' : '';
 
   return (
@@ -99,7 +124,7 @@ export default function App() {
           enterTheater={enterTheater}
           onEnterSnack={() => setGameState('snack')}
           onEnterPark={() => setGameState('park')}
-          onEnterSlides={() => setGameState('slides')}
+          onEnterSlides={startAct2}
         />
       )}
       
@@ -108,7 +133,7 @@ export default function App() {
       {gameState === 'kindergarten' && <KindergartenGame onFinish={(data) => exitBuilding('kindergarten', data)} />}
       {gameState === 'theater' && <TheaterGame profile={profile} onFinish={(data) => exitBuilding('theater', data)} />}
       
-      {gameState === 'slides' && <SlideDeck profile={profile} />}
+      {gameState === 'slides' && act2Profile && act2Theme && <SlideDeck profile={act2Profile} theme={act2Theme} />}
     </div>
   );
 }
@@ -174,6 +199,7 @@ function GameCanvas({
         canvasRef.current.height = window.innerHeight;
       }
     };
+
     window.addEventListener('resize', handleResize);
     handleResize();
 
@@ -1092,7 +1118,7 @@ function ParkGame({ onFinish }) {
       ctx.fillStyle = '#8B6914'; ctx.fillRect(boardX, boardY, boardW, boardH);
       ctx.fillStyle = '#C4A882'; ctx.fillRect(boardX + 10, boardY + 10, boardW - 20, boardH - 20);
       ctx.strokeStyle = '#5d4421'; ctx.lineWidth = 4; ctx.strokeRect(boardX, boardY, boardW, boardH);
-      ctx.fillStyle = '#2a1d10'; ctx.font = '12px "Press Start 2P"'; ctx.fillText('KAZAMA POLICY BOARD', boardX + 24, boardY + 26);
+      ctx.fillStyle = '#2a1d10'; ctx.font = '14px "Press Start 2P"'; ctx.fillText('KAZAMA POLICY BOARD', boardX + 24, boardY + 28);
       ctx.fillText('DRAG NOTES UP OR DOWN', boardX + 24, boardY + 44);
       const base = boardY + 72;
       boardItems.current.forEach((item, index) => {
@@ -1101,14 +1127,23 @@ function ParkGame({ onFinish }) {
         ctx.fillStyle = '#f5e2b0'; ctx.fillRect(noteX, noteY, boardW - 52, 48);
         ctx.fillStyle = '#7b5a31'; ctx.fillRect(noteX + 8, noteY - 6, 8, 8);
         ctx.fillRect(noteX + boardW - 72, noteY - 6, 8, 8);
-        ctx.fillStyle = '#1a1a1a'; ctx.font = '10px "Press Start 2P"'; ctx.fillText(`${index + 1}. ${item}`, noteX + 12, noteY + 28);
+        ctx.fillStyle = '#1a1a1a'; ctx.font = '11px "Press Start 2P"'; ctx.fillText(`${index + 1}. ${item}`, noteX + 12, noteY + 30);
       });
-      ctx.fillStyle = '#ffebc8'; ctx.fillRect(w * 0.07, h * 0.63, 80, 44);
-      ctx.fillStyle = '#111'; ctx.font = '10px "Press Start 2P"'; ctx.fillText('SHIN-CHAN', w * 0.072, h * 0.65);
-      ctx.fillText('ANNOTATES THE BOARD', w * 0.072, h * 0.68);
-      ctx.fillStyle = 'rgba(10,12,32,0.92)'; ctx.fillRect(w * 0.18, h * 0.80, w * 0.64, 64); ctx.strokeStyle = '#fff'; ctx.strokeRect(w * 0.18, h * 0.80, w * 0.64, 64);
-      ctx.fillStyle = '#fff'; ctx.font = '11px "Press Start 2P"'; ctx.fillText('KAZAMA made a park election. Shin-chan is ruining it with policy.', w * 0.2, h * 0.835);
-      ctx.fillText('Drag the notes. Then click the board to lock it in.', w * 0.2, h * 0.865);
+      const badgeX = 24;
+      const badgeY = h * 0.6;
+      const badgeW = Math.min(280, w * 0.24);
+      const badgeH = 92;
+      ctx.fillStyle = 'rgba(255, 235, 200, 0.98)';
+      ctx.fillRect(badgeX, badgeY, badgeW, badgeH);
+      ctx.strokeStyle = '#5d4421';
+      ctx.lineWidth = 3;
+      ctx.strokeRect(badgeX, badgeY, badgeW, badgeH);
+      ctx.fillStyle = '#111';
+      ctx.font = '11px "Press Start 2P"';
+      wrapCanvasText(ctx, 'SHIN-CHAN ANNOTATES THE BOARD', badgeX + 10, badgeY + 26, badgeW - 20, 20);
+      ctx.fillStyle = 'rgba(10,12,32,0.92)'; ctx.fillRect(w * 0.18, h * 0.79, w * 0.64, 78); ctx.strokeStyle = '#fff'; ctx.strokeRect(w * 0.18, h * 0.79, w * 0.64, 78);
+      ctx.fillStyle = '#fff'; ctx.font = '12px "Press Start 2P"'; ctx.fillText('KAZAMA made a park election. Shin-chan is ruining it with policy.', w * 0.2, h * 0.83);
+      ctx.fillText('Drag the notes. Then click DONE to lock it in.', w * 0.2, h * 0.863);
       const doneX = w * 0.81, doneY = h * 0.82;
       ctx.fillStyle = hoverDone ? '#ffb347' : '#ffd44d'; ctx.fillRect(doneX, doneY, 120, 42); ctx.fillStyle = '#000'; ctx.fillText('DONE', doneX + 38, doneY + 26);
     };
@@ -1140,8 +1175,8 @@ function ParkGame({ onFinish }) {
 function KindergartenGame({ onFinish }) {
   const canvasRef = useRef(null);
   const audioCtxRef = useRef(null);
-  const typingPoolRef = useRef([]);
-  const typingPoolIndexRef = useRef(0);
+  const typingAudioRef = useRef(null);
+  const typingActiveRef = useRef(false);
   const optionRectsRef = useRef([]);
   const hoverRef = useRef(-1);
   const selectedRef = useRef({ index: -1, start: 0 });
@@ -1236,54 +1271,41 @@ function KindergartenGame({ onFinish }) {
   };
 
   useEffect(() => {
-    const src = 'https://actions.google.com/sounds/v1/foley/typewriter_key.ogg';
-    const pool = Array.from({ length: 8 }, () => {
-      const a = new Audio(src);
-      a.preload = 'auto';
-      a.volume = 0.3;
-      a.playbackRate = 0.78;
-      return a;
-    });
-    typingPoolRef.current = pool;
+    const a = new Audio(keyboardTypingMp3);
+    a.preload = 'auto';
+    a.loop = true;
+    a.volume = 0.34;
+    a.playbackRate = 1;
+    typingAudioRef.current = a;
+
     return () => {
-      typingPoolRef.current.forEach(a => {
-        a.pause();
-        a.src = '';
-      });
-      typingPoolRef.current = [];
+      if (typingAudioRef.current) {
+        typingAudioRef.current.pause();
+        typingAudioRef.current.src = '';
+      }
+      typingAudioRef.current = null;
+      typingActiveRef.current = false;
     };
   }, []);
 
-  const playScratch = () => {
-    const pool = typingPoolRef.current;
-    if (pool.length > 0) {
-      const idx = typingPoolIndexRef.current % pool.length;
-      typingPoolIndexRef.current += 1;
-      const snd = pool[idx];
+  const setTypingAudioActive = (active) => {
+    const snd = typingAudioRef.current;
+    if (!snd) return;
+    if (active && !typingActiveRef.current) {
       try {
-        snd.currentTime = 0;
-        snd.playbackRate = 0.74 + Math.random() * 0.08;
         const p = snd.play();
         if (p && typeof p.catch === 'function') p.catch(() => {});
-        return;
       } catch {}
+      typingActiveRef.current = true;
+      return;
     }
-
-    const audio = ensureAudio();
-    if (!audio) return;
-    const now = audio.currentTime;
-    const osc = audio.createOscillator();
-    const gain = audio.createGain();
-    osc.type = 'square';
-    const base = 220 + Math.random() * 70;
-    osc.frequency.setValueAtTime(base, now);
-    osc.frequency.exponentialRampToValueAtTime(base * 0.64, now + 0.05);
-    gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.linearRampToValueAtTime(0.04, now + 0.005);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.06);
-    osc.connect(gain).connect(audio.destination);
-    osc.start(now);
-    osc.stop(now + 0.07);
+    if (!active && typingActiveRef.current) {
+      try {
+        snd.pause();
+        snd.currentTime = 0;
+      } catch {}
+      typingActiveRef.current = false;
+    }
   };
 
   const setDialogue = (text, now) => {
@@ -1397,11 +1419,11 @@ function KindergartenGame({ onFinish }) {
       }
       ctx.fillStyle = '#8B6230'; ctx.fillRect(96, 16, w - 192, 34);
       ctx.fillStyle = '#7A5220'; for (let gy = 18; gy < 48; gy += 8) ctx.fillRect(100, gy, w - 200, 1);
-      ctx.fillStyle = '#FFE87A'; ctx.font = '8px "Press Start 2P"'; ctx.fillText('FUTABA KINDERGARTEN', w * 0.5 - 118, 38);
+      ctx.fillStyle = '#FFE87A'; ctx.font = '14px "Press Start 2P"'; ctx.fillText('FUTABA KINDERGARTEN', w * 0.5 - 194, 42);
       ctx.fillStyle = '#CC2200'; ctx.fillRect(110, 28, 8, 8); ctx.fillRect(118, 30, 6, 6);
       ctx.fillStyle = '#2D8A2D'; ctx.fillRect(116, 24, 4, 3);
       ctx.fillStyle = '#8B4513'; ctx.fillRect(114, 22, 2, 3);
-      ctx.fillStyle = '#FFFDE0'; ctx.font = '7px "Press Start 2P"'; ctx.fillText(`Q ${qIndexRef.current + 1}/${questions.length}`, w - 176, 37);
+      ctx.fillStyle = '#FFFDE0'; ctx.font = '12px "Press Start 2P"'; ctx.fillText(`Q ${qIndexRef.current + 1}/${questions.length}`, w - 224, 40);
 
       // Blackboard
       const boardX = w * 0.2;
@@ -1427,14 +1449,16 @@ function KindergartenGame({ onFinish }) {
         }
       }
 
-      if (!eraserRef.current.active && boardTextRef.current.shown.length < boardTextRef.current.full.length && time >= boardTextRef.current.nextAt) {
+      const boardTyping = !eraserRef.current.active && boardTextRef.current.shown.length < boardTextRef.current.full.length;
+      setTypingAudioActive(boardTyping);
+
+      if (boardTyping && time >= boardTextRef.current.nextAt) {
         boardTextRef.current.shown = boardTextRef.current.full.slice(0, boardTextRef.current.shown.length + 1);
         boardTextRef.current.nextAt = time + 27;
-        playScratch();
       }
-      ctx.fillStyle = '#FFFDE0'; ctx.font = '9px "Press Start 2P"';
-      wrapCanvasText(ctx, boardTextRef.current.shown, boardX + 20, boardY + 34, boardW - 40, 16);
-      ctx.font = '7px "Press Start 2P"'; ctx.fillText(`Q ${qIndexRef.current + 1}/${questions.length}`, boardX + boardW - 70, boardY + 20);
+      ctx.fillStyle = '#FFFDE0'; ctx.font = '15px "Press Start 2P"';
+      wrapCanvasText(ctx, boardTextRef.current.shown, boardX + 20, boardY + 46, boardW - 40, 25);
+      ctx.font = '12px "Press Start 2P"'; ctx.fillText(`Q ${qIndexRef.current + 1}/${questions.length}`, boardX + boardW - 126, boardY + 22);
 
       // Desks
       const drawDesk = (x, y, scale) => {
@@ -1504,9 +1528,9 @@ function KindergartenGame({ onFinish }) {
         ctx.fillStyle = flash ? '#FFFFFF' : '#FFFDE0'; ctx.fillRect(x, y + yShift, cardW, cardH);
         ctx.strokeStyle = hover ? '#CC2200' : '#333333'; ctx.lineWidth = 2; ctx.strokeRect(x, y + yShift, cardW, cardH);
         ctx.fillStyle = '#E8D4A0'; ctx.beginPath(); ctx.moveTo(x + cardW - 14, y + yShift); ctx.lineTo(x + cardW, y + yShift); ctx.lineTo(x + cardW, y + yShift + 14); ctx.closePath(); ctx.fill();
-        ctx.fillStyle = '#CC2200'; ctx.font = '10px "Press Start 2P"'; ctx.fillText(option.id, x + 8, y + yShift + 16);
+        ctx.fillStyle = '#CC2200'; ctx.font = '15px "Press Start 2P"'; ctx.fillText(option.id, x + 8, y + yShift + 22);
         if (hover && Math.floor(time / 250) % 2 === 0) ctx.fillText('*', x + 22, y + yShift + 16);
-        ctx.fillStyle = '#1A1A1A'; ctx.font = '7px "Press Start 2P"'; wrapCanvasText(ctx, option.text, x + 10, y + yShift + 34, cardW - 20, 12);
+        ctx.fillStyle = '#1A1A1A'; ctx.font = '13px "Press Start 2P"'; wrapCanvasText(ctx, option.text, x + 10, y + yShift + 45, cardW - 20, 21);
 
         if (selectedRef.current.index === index && clickAge > 60) {
           const p = Math.min(1, (clickAge - 60) / 220);
@@ -1530,22 +1554,31 @@ function KindergartenGame({ onFinish }) {
         dialogueRef.current.nextAt = time + 16;
       }
       const boxX = 16;
-      const boxY = h - 100;
+      const boxY = h - 140;
       const boxW = w - 32;
-      const boxH = 84;
+      const boxH = 124;
       ctx.fillStyle = 'rgba(10,10,30,0.93)'; ctx.fillRect(boxX, boxY, boxW, boxH);
       ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.strokeRect(boxX, boxY, boxW, boxH);
       ctx.strokeStyle = '#333355'; ctx.lineWidth = 1; ctx.strokeRect(boxX + 4, boxY + 4, boxW - 8, boxH - 8);
       ctx.fillStyle = '#ffebc8'; ctx.fillRect(boxX + 12, boxY + 18, 16, 16);
       ctx.fillStyle = '#111'; ctx.fillRect(boxX + 15, boxY + 22, 3, 3); ctx.fillRect(boxX + 22, boxY + 22, 3, 3);
       ctx.fillStyle = '#CC2200'; ctx.fillRect(boxX + 16, boxY + 29, 8, 2);
-      ctx.fillStyle = '#FFD700'; ctx.font = '7px "Press Start 2P"'; ctx.fillText('Shin-chan:', boxX + 34, boxY + 28);
-      ctx.fillStyle = '#FFF'; ctx.font = '7px "Press Start 2P"'; wrapCanvasText(ctx, dialogueRef.current.shown, boxX + 80, boxY + 28, boxW - 98, 12);
+      ctx.fillStyle = '#FFD700'; ctx.font = '13px "Press Start 2P"'; ctx.fillText('Shin-chan:', boxX + 34, boxY + 38);
+      ctx.strokeStyle = 'rgba(255,255,255,0.24)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(boxX + 20, boxY + 52);
+      ctx.lineTo(boxX + boxW - 20, boxY + 52);
+      ctx.stroke();
+      ctx.fillStyle = '#FFF';
+      ctx.font = '13px "Press Start 2P"';
+      wrapCanvasText(ctx, dialogueRef.current.shown, boxX + 20, boxY + 78, boxW - 40, 22);
       if (dialogueRef.current.shown.length >= dialogueRef.current.full.length && Math.floor(time / 400) % 2 === 0) ctx.fillText('v', boxX + boxW - 18, boxY + boxH - 10);
     };
 
     frameId = requestAnimationFrame(render);
     return () => {
+      setTypingAudioActive(false);
       cancelAnimationFrame(frameId);
       window.removeEventListener('resize', resize);
       canvas.removeEventListener('pointermove', handleMove);
@@ -1564,6 +1597,7 @@ function TheaterGame({ profile, onFinish }) {
   const bulletsRef = useRef([]);
   const particlesRef = useRef([]);
   const keysRef = useRef({});
+  const pointerFireRef = useRef({ active: false, pointerId: null });
   const playerRef = useRef({ x: 0.5, cooldown: 0, lives: 3, combo: 0 });
   const niggeshScoreRef = useRef(0);
   if (niggeshScoreRef.current === 0) niggeshScoreRef.current = 3800 + Math.floor(Math.random() * 1200);
@@ -1623,7 +1657,21 @@ function TheaterGame({ profile, onFinish }) {
       bulletsRef.current.push({ x: p.x, y: 0.82, vy: -1.1, w: 6, h: 18 });
     };
 
-    const onPointerDown = () => shoot();
+    const onPointerDown = (event) => {
+      pointerFireRef.current = { active: true, pointerId: event.pointerId };
+      if (typeof canvas.setPointerCapture === 'function') {
+        try { canvas.setPointerCapture(event.pointerId); } catch {}
+      }
+      shoot();
+    };
+
+    const onPointerUp = (event) => {
+      if (pointerFireRef.current.pointerId != null && event.pointerId != null && pointerFireRef.current.pointerId !== event.pointerId) return;
+      if (typeof canvas.releasePointerCapture === 'function' && pointerFireRef.current.pointerId != null) {
+        try { canvas.releasePointerCapture(pointerFireRef.current.pointerId); } catch {}
+      }
+      pointerFireRef.current = { active: false, pointerId: null };
+    };
 
     const spawnEnemy = () => {
       if (!runningRef.current) return;
@@ -1651,6 +1699,9 @@ function TheaterGame({ profile, onFinish }) {
     window.addEventListener('keyup', onKeyUp);
     canvas.addEventListener('pointermove', onPointerMove);
     canvas.addEventListener('pointerdown', onPointerDown);
+    canvas.addEventListener('pointerup', onPointerUp);
+    canvas.addEventListener('pointercancel', onPointerUp);
+    canvas.addEventListener('pointerleave', onPointerUp);
 
     const spawnRate = () => {
       clearInterval(spawnTimerRef.current);
@@ -1749,6 +1800,7 @@ function TheaterGame({ profile, onFinish }) {
             bulletsRef.current.push({ x: p.x, y: 0.82, vy: -1.1, w: 6, h: 18 });
           }
         }
+        if (pointerFireRef.current.active) shoot();
       }
       p.x = Math.max(0.08, Math.min(0.92, p.x));
       p.cooldown = Math.max(0, p.cooldown - dt);
@@ -1884,6 +1936,9 @@ function TheaterGame({ profile, onFinish }) {
       window.removeEventListener('keyup', onKeyUp);
       canvas.removeEventListener('pointermove', onPointerMove);
       canvas.removeEventListener('pointerdown', onPointerDown);
+      canvas.removeEventListener('pointerup', onPointerUp);
+      canvas.removeEventListener('pointercancel', onPointerUp);
+      canvas.removeEventListener('pointerleave', onPointerUp);
     };
   }, [finish]);
 
@@ -1931,82 +1986,364 @@ function ShinCorner({ pose = 'idle', className = '' }) {
   return <canvas ref={canvasRef} className={`shin-corner ${className}`.trim()} />;
 }
 
-// ================= ACT 2: Complete visual overhaul =================
-function SlideDeck({ profile }) {
+// ================= ACT 2: Personalization pipeline =================
+function drawFoodSpriteById(ctx, spriteId, x = -8, y = -8, size = 16) {
+  const sx = x;
+  const sy = y;
+  const unit = size / 16;
+  const px = (vx) => sx + vx * unit;
+  const py = (vy) => sy + vy * unit;
+  const ps = (v) => v * unit;
+
+  ctx.save();
+  if (spriteId === 'biscuits') {
+    ctx.fillStyle = '#6B3A2A'; ctx.fillRect(px(1), py(3), ps(14), ps(10));
+    ctx.fillStyle = '#8B5A3A'; ctx.fillRect(px(2), py(4), ps(12), ps(8));
+    ctx.fillStyle = '#3D1A0A';
+    for (let gx = 3; gx <= 11; gx += 3) ctx.fillRect(px(gx), py(6), ps(1), ps(1));
+    for (let gx = 4; gx <= 12; gx += 3) ctx.fillRect(px(gx), py(9), ps(1), ps(1));
+  } else if (spriteId === 'chips') {
+    ctx.fillStyle = '#FFD700'; ctx.fillRect(px(2), py(1), ps(12), ps(14));
+    ctx.fillStyle = '#CC2200'; ctx.fillRect(px(3), py(5), ps(10), ps(2));
+    ctx.fillStyle = '#FFF2A8'; ctx.fillRect(px(5), py(8), ps(6), ps(4));
+  } else if (spriteId === 'biryani') {
+    ctx.fillStyle = '#8B4513'; ctx.fillRect(px(1), py(10), ps(14), ps(5));
+    ctx.fillStyle = '#FFF4CC'; ctx.fillRect(px(2), py(6), ps(12), ps(5));
+    ctx.fillStyle = '#E8922A';
+    for (let gx = 2; gx <= 12; gx += 2) ctx.fillRect(px(gx), py(7 + (gx % 3)), ps(1), ps(1));
+  } else if (spriteId === 'pizza') {
+    ctx.fillStyle = '#E8922A';
+    ctx.beginPath();
+    ctx.moveTo(px(1), py(14));
+    ctx.lineTo(px(15), py(14));
+    ctx.lineTo(px(8), py(1));
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#CC2200'; ctx.fillRect(px(3), py(8), ps(10), ps(2));
+  } else if (spriteId === 'mango') {
+    ctx.fillStyle = '#FF9A3C';
+    ctx.beginPath();
+    ctx.ellipse(px(8), py(7), ps(5), ps(5), 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#FFE6B4'; ctx.fillRect(px(6), py(11), ps(4), ps(3));
+  } else if (spriteId === 'chocoIce') {
+    ctx.fillStyle = '#4A2200';
+    ctx.beginPath();
+    ctx.ellipse(px(8), py(7), ps(5), ps(5), 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#C4935A'; ctx.fillRect(px(6), py(11), ps(4), ps(3));
+  } else if (spriteId === 'maggi') {
+    ctx.fillStyle = '#E8E8E8'; ctx.fillRect(px(1), py(10), ps(14), ps(5));
+    ctx.fillStyle = '#FFB347';
+    for (let gy = 0; gy < 3; gy += 1) ctx.fillRect(px(2 + gy * 3), py(8 + gy), ps(10), ps(1));
+  } else if (spriteId === 'samosa') {
+    ctx.fillStyle = '#C4935A';
+    ctx.beginPath();
+    ctx.moveTo(px(2), py(14));
+    ctx.lineTo(px(14), py(14));
+    ctx.lineTo(px(8), py(2));
+    ctx.closePath();
+    ctx.fill();
+  } else if (spriteId === 'burger') {
+    ctx.fillStyle = '#E8922A'; ctx.fillRect(px(2), py(4), ps(12), ps(3));
+    ctx.fillStyle = '#FFD700'; ctx.fillRect(px(2), py(8), ps(12), ps(2));
+    ctx.fillStyle = '#3D1A00'; ctx.fillRect(px(2), py(10), ps(12), ps(2));
+    ctx.fillStyle = '#E8922A'; ctx.fillRect(px(2), py(12), ps(12), ps(3));
+  } else if (spriteId === 'chai') {
+    ctx.fillStyle = '#EEEDE8'; ctx.fillRect(px(3), py(2), ps(10), ps(12));
+    ctx.fillStyle = '#8B4513'; ctx.fillRect(px(4), py(6), ps(8), ps(5));
+  } else if (spriteId === 'coffee') {
+    ctx.strokeStyle = '#AAAAAA'; ctx.lineWidth = Math.max(1, ps(1)); ctx.strokeRect(px(4), py(1), ps(8), ps(13));
+    ctx.fillStyle = '#3D1A00'; ctx.fillRect(px(5), py(7), ps(6), ps(6));
+    ctx.fillStyle = '#C4935A'; ctx.fillRect(px(5), py(4), ps(6), ps(3));
+  } else if (spriteId === 'pudding') {
+    ctx.fillStyle = '#FFD700';
+    ctx.beginPath();
+    ctx.ellipse(px(8), py(9), ps(5), ps(4), 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#C47820';
+    ctx.fillRect(px(6), py(5), ps(1), ps(5));
+    ctx.fillRect(px(8), py(4), ps(1), ps(6));
+    ctx.fillRect(px(10), py(5), ps(1), ps(5));
+  }
+  ctx.restore();
+}
+
+const FOOD_THEMES = {
+  'Chocolate Biscuits': {
+    bgColor: '#1A0A00', accentColor: '#C47820', lightColor: '#E8922A', particleColor: '#C47820', floatingEmoji: '🍫',
+    sprite: (ctx, x = -8, y = -8) => drawFoodSpriteById(ctx, 'biscuits', x, y),
+    label: 'chocolate biscuits',
+    personalityLine: 'Chocolate biscuit person. Reliable. Slightly chaotic. Correct.'
+  },
+  Chips: {
+    bgColor: '#1A1400', accentColor: '#FFD700', lightColor: '#FFE87A', particleColor: '#FFD700', floatingEmoji: '🍟',
+    sprite: (ctx, x = -8, y = -8) => drawFoodSpriteById(ctx, 'chips', x, y),
+    label: 'chips',
+    personalityLine: 'Chips. Bold choice. No regrets energy. Confirmed.'
+  },
+  Biryani: {
+    bgColor: '#1A0800', accentColor: '#E8922A', lightColor: '#FFC07A', particleColor: '#E8922A', floatingEmoji: '🍛',
+    sprite: (ctx, x = -8, y = -8) => drawFoodSpriteById(ctx, 'biryani', x, y),
+    label: 'biryani',
+    personalityLine: 'Biryani over everything. Main character confirmed.'
+  },
+  'Pizza Slice': {
+    bgColor: '#1A0300', accentColor: '#CC2200', lightColor: '#FF6644', particleColor: '#CC2200', floatingEmoji: '🍕',
+    sprite: (ctx, x = -8, y = -8) => drawFoodSpriteById(ctx, 'pizza', x, y),
+    label: 'pizza',
+    personalityLine: 'Pizza person. International. Dangerous at parties.'
+  },
+  'Mango Ice Cream': {
+    bgColor: '#1A0C00', accentColor: '#FF9A3C', lightColor: '#FFB870', particleColor: '#FF9A3C', floatingEmoji: '🍨',
+    sprite: (ctx, x = -8, y = -8) => drawFoodSpriteById(ctx, 'mango', x, y),
+    label: 'mango ice cream',
+    personalityLine: 'Mango ice cream. Summer energy. Unpredictably good.'
+  },
+  'Chocolate Ice Cream': {
+    bgColor: '#120800', accentColor: '#8B4513', lightColor: '#C47820', particleColor: '#8B4513', floatingEmoji: '🍨',
+    sprite: (ctx, x = -8, y = -8) => drawFoodSpriteById(ctx, 'chocoIce', x, y),
+    label: 'chocolate ice cream',
+    personalityLine: 'Classic. Never wrong. Understated power move.'
+  },
+  Maggi: {
+    bgColor: '#0F0C00', accentColor: '#FFB347', lightColor: '#FFD080', particleColor: '#FFB347', floatingEmoji: '🍜',
+    sprite: (ctx, x = -8, y = -8) => drawFoodSpriteById(ctx, 'maggi', x, y),
+    label: 'maggi',
+    personalityLine: '2AM maggi person. Comfort seeker. Extremely trustworthy.'
+  },
+  Samosa: {
+    bgColor: '#1A0E00', accentColor: '#C4935A', lightColor: '#E8B870', particleColor: '#C4935A', floatingEmoji: '🥟',
+    sprite: (ctx, x = -8, y = -8) => drawFoodSpriteById(ctx, 'samosa', x, y),
+    label: 'samosa',
+    personalityLine: 'Samosa. Crispy outside, chaotic inside. Accurate.'
+  },
+  Burger: {
+    bgColor: '#180A00', accentColor: '#E8922A', lightColor: '#FFB347', particleColor: '#E8922A', floatingEmoji: '🍔',
+    sprite: (ctx, x = -8, y = -8) => drawFoodSpriteById(ctx, 'burger', x, y),
+    label: 'burger',
+    personalityLine: 'Burger. Go big or go home. Exactly what was expected.'
+  },
+  'Chai Cup': {
+    bgColor: '#0A0800', accentColor: '#C47820', lightColor: '#E8A020', particleColor: '#C47820', floatingEmoji: '☕',
+    sprite: (ctx, x = -8, y = -8) => drawFoodSpriteById(ctx, 'chai', x, y),
+    label: 'chai',
+    personalityLine: 'Chai person. Patient. Warm. Makes the right call eventually.'
+  },
+  'Cold Coffee': {
+    bgColor: '#080812', accentColor: '#8B6914', lightColor: '#C4A060', particleColor: '#8B6914', floatingEmoji: '🥤',
+    sprite: (ctx, x = -8, y = -8) => drawFoodSpriteById(ctx, 'coffee', x, y),
+    label: 'cold coffee',
+    personalityLine: 'Cold coffee. Function over feeling. Respected.'
+  },
+  'Kasukabe Pudding': {
+    bgColor: '#120F00', accentColor: '#FFD700', lightColor: '#FFE87A', particleColor: '#FFD700', floatingEmoji: '🍮',
+    sprite: (ctx, x = -8, y = -8) => drawFoodSpriteById(ctx, 'pudding', x, y),
+    label: 'kasukabe pudding',
+    personalityLine: 'THE PUDDING. Of all options. This one. Shin-chan approves.'
+  },
+  default: {
+    bgColor: '#111018', accentColor: '#ffb347', lightColor: '#ffd591', particleColor: '#ffb347', floatingEmoji: '✨',
+    sprite: (ctx, x = -8, y = -8) => drawFoodSpriteById(ctx, 'maggi', x, y),
+    label: 'mystery snack',
+    personalityLine: 'Unexpected, but still iconic.'
+  }
+};
+
+const CHOICE_EXTRAS = {
+  'Eating Maggi at 2AM': 'Steam wisps float up from screen bottom.',
+  'Texting first after 3 days': 'Tiny pixel phones drift across background.',
+  'Going on a random trip with no plan': 'Pixel maps and compass roses float in bg.',
+  'Watching 6 episodes in one sitting': 'Pixel TV screens scattered behind content.',
+  'Sending a voice note': 'Pixel soundwave lines pulse slowly in bg.',
+  'Leaving without saying bye': 'Pixel door sprites, slightly ajar, drifting.',
+  'Rewatching same show 3rd time': 'Pixel film reels float across background.'
+};
+
+const QUIZ_GHOST_LINES = {
+  A: "Would've replied immediately. Pretended nothing happened.",
+  B: 'Left it on read. Calculated. Disciplined.',
+  C: 'Sent a meme. No context. Perfect response.',
+  D: 'Typed k. Absolute power move.'
+};
+
+const FOOD_KEY_ALIASES = {
+  Pizza: 'Pizza Slice',
+  Chai: 'Chai Cup'
+};
+
+function buildTheme(profile = {}) {
+  const snackKey = FOOD_KEY_ALIASES[profile.snackChoice] || profile.snackChoice;
+  const base = FOOD_THEMES[snackKey] || FOOD_THEMES.default;
+  const choiceExtra = CHOICE_EXTRAS[profile.topChoice] || '';
+  const ghostLine = QUIZ_GHOST_LINES[profile.quizAnswers?.[0]] || '';
+  const rhythm = profile.rhythmScore;
+
+  const theme = {
+    ...base,
+    snackChoice: profile.snackChoice || 'Maggi',
+    topChoice: profile.topChoice || 'Going on a random trip with no plan',
+    quizAnswers: profile.quizAnswers || ['B', 'C', 'A', 'D', 'A', 'C', 'D'],
+    rhythmScore: rhythm || 'mid',
+    choiceExtra,
+    ghostLine,
+    rhythmLine: rhythm === 'high'
+      ? 'Rhythm score: high. Hiroshi is embarrassed.'
+      : rhythm === 'mid'
+        ? 'Rhythm score: mid. Better than Hiroshi. Barely.'
+        : 'Rhythm score: low. Hiroshi felt better about himself.',
+    conclusionText: base.personalityLine,
+    reportFinding2: `Ranked "${profile.topChoice || 'Going on a random trip with no plan'}" as Priority 1. ${choiceExtra ? 'This tracks.' : 'Interesting.'}`,
+    reportFinding3: `Ghost situation response: ${ghostLine || 'Unknown response.'}`,
+  };
+
+  window.SLIDE_THEME = theme;
+  return theme;
+}
+
+function useBodyBg(color) {
+  useEffect(() => {
+    const previous = document.body.style.background;
+    document.body.style.background = color;
+    return () => {
+      document.body.style.background = previous;
+    };
+  }, [color]);
+}
+
+function useFoodParticles(theme, enabled, count = 14) {
+  useEffect(() => {
+    if (!enabled || !theme?.sprite) return undefined;
+
+    const canvas = document.createElement('canvas');
+    canvas.className = 'act2-particle-layer';
+    const ctx = canvas.getContext('2d', { alpha: true });
+    if (!ctx) return undefined;
+    ctx.imageSmoothingEnabled = false;
+    document.body.appendChild(canvas);
+
+    const resize = () => {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    };
+    resize();
+    window.addEventListener('resize', resize);
+
+    const particles = Array.from({ length: count }).map(() => ({
+      x: Math.random() * window.innerWidth,
+      y: Math.random() * window.innerHeight,
+      size: (Math.floor(Math.random() * 3) + 1) * 8,
+      speed: Math.random() * 0.4 + 0.15,
+      drift: (Math.random() - 0.5) * 0.3,
+      opacity: Math.random() * 0.06 + 0.04,
+      rotation: Math.random() * Math.PI * 2,
+      rotSpeed: (Math.random() - 0.5) * 0.01,
+    }));
+
+    let rafId = 0;
+    const draw = () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      particles.forEach((p) => {
+        ctx.save();
+        ctx.globalAlpha = p.opacity;
+        ctx.translate(p.x, p.y);
+        ctx.rotate(p.rotation);
+        const scale = p.size / 16;
+        ctx.scale(scale, scale);
+        theme.sprite(ctx, -8, -8);
+        ctx.restore();
+
+        p.y += p.speed;
+        p.x += p.drift;
+        p.rotation += p.rotSpeed;
+        if (p.y > window.innerHeight + 30) {
+          p.y = -30;
+          p.x = Math.random() * window.innerWidth;
+        }
+      });
+      rafId = requestAnimationFrame(draw);
+    };
+
+    draw();
+    return () => {
+      cancelAnimationFrame(rafId);
+      window.removeEventListener('resize', resize);
+      canvas.remove();
+    };
+  }, [theme, enabled, count]);
+}
+
+function SlideDeck({ profile, theme }) {
   const [slide, setSlide] = useState(1);
 
   return (
     <div className="slides-container cinematic-act2">
-       {slide === 1 && <Slide1 onNext={() => setSlide(2)} />}
-       {slide === 2 && <Slide3 profile={profile} onNext={() => setSlide(3)} />}
-       {slide === 3 && <Slide2 profile={profile} onNext={() => setSlide(4)} />}
-       {slide === 4 && <Slide4 profile={profile} onNext={() => setSlide(5)} />}
-       {slide === 5 && <Slide5 profile={profile} onNext={() => setSlide(6)} />}
-       {slide === 6 && <Slide6 profile={profile} onYes={() => setSlide(7)} />}
-       {slide === 7 && <Slide7 profile={profile} />}
+      {slide === 1 && <Slide1 profile={profile} theme={theme} onNext={() => setSlide(2)} />}
+      {slide === 2 && <Slide3 profile={profile} theme={theme} onNext={() => setSlide(3)} />}
+      {slide === 3 && <Slide4 profile={profile} theme={theme} onNext={() => setSlide(4)} />}
+      {slide === 4 && <Slide5 profile={profile} theme={theme} onNext={() => setSlide(5)} />}
+      {slide === 5 && <Slide6 profile={profile} theme={theme} onYes={() => setSlide(6)} />}
+      {slide === 6 && <Slide7 profile={profile} theme={theme} />}
     </div>
   );
 }
 
-function Slide1({ onNext }) {
+function Slide1({ profile, theme, onNext }) {
   const [text, setText] = useState('');
   const [showSub, setShowSub] = useState(false);
   const [done, setDone] = useState(false);
-  const target = "okay so heres waht happened.";
+  const [showPunctuationBox, setShowPunctuationBox] = useState(false);
+  const wrongTarget = 'okay so heres waht happen';
+  const correctedTarget = "okay so here's what happened.";
+
+  useBodyBg(theme.bgColor);
+  useFoodParticles(theme, true, 14);
 
   useEffect(() => {
-    let index = 0;
     let cancelled = false;
+    const timers = [];
+    const wait = (ms) => new Promise(resolve => {
+      const id = setTimeout(resolve, ms);
+      timers.push(id);
+    });
 
-    const step = () => {
-      if (cancelled) return;
-      if (index <= target.length) {
-        setText(target.slice(0, index));
-        index += 1;
-        const delay = 28 + Math.floor(Math.random() * 90);
-        setTimeout(step, delay);
-      } else {
-        setTimeout(() => {
-          if (cancelled) return;
-          let back = target.length;
-          const erase = () => {
-            if (cancelled) return;
-            if (back > 12) {
-              back -= 1;
-              setText(target.slice(0, back));
-              setTimeout(erase, 35);
-            } else {
-              let fix = 'okay so here\'s what happened.';
-              let reveal = 0;
-              const typeFix = () => {
-                if (cancelled) return;
-                if (reveal <= fix.length) {
-                  setText(fix.slice(0, reveal));
-                  reveal += 1;
-                  setTimeout(typeFix, 40 + Math.random() * 50);
-                } else {
-                  setShowSub(true);
-                  setDone(true);
-                }
-              };
-              typeFix();
-            }
-          };
-          erase();
-        }, 500);
+    const typeText = async (value, minDelay, maxJitter) => {
+      for (let i = 0; i <= value.length; i += 1) {
+        if (cancelled) return;
+        setText(value.slice(0, i));
+        // eslint-disable-next-line no-await-in-loop
+        await wait(minDelay + Math.floor(Math.random() * maxJitter));
       }
     };
 
-    step();
+    const run = async () => {
+      await typeText(wrongTarget, 38, 70);
+      if (cancelled) return;
+      setShowPunctuationBox(true);
+      await wait(4500);
+      if (cancelled) return;
+      setShowPunctuationBox(false);
+      setText('');
+      await wait(160);
+      if (cancelled) return;
+      await typeText(correctedTarget, 40, 45);
+      if (cancelled) return;
+      setShowSub(true);
+      setDone(true);
+    };
+
+    run();
     return () => {
       cancelled = true;
+      timers.forEach(clearTimeout);
     };
   }, []);
 
   return (
-    <div className="act2-scene scene-1 act2-frame act2-frame-dark" onClick={() => done && onNext()}>
+    <div className="act2-scene scene-1 act2-frame act2-frame-dark" style={{ background: theme.bgColor }} onClick={() => done && onNext()}>
       <div className="terminal-cursor" />
       <h1 className="typewriter-line">{text}</h1>
+      {showPunctuationBox && <div className="punctuation-popup">small typo first. then the real line.</div>}
       {showSub && <p className="handwritten-sub">and i need you to understand how astronomically idiotic this whole situation has been.</p>}
       {done && <p className="scene-hint">tap to continue</p>}
       <ShinCorner pose="idle" className="corner-bottom-right" />
@@ -2015,149 +2352,144 @@ function Slide1({ onNext }) {
   );
 }
 
-function Slide2({ profile, onNext }) {
-  const canvasRef = useRef(null);
-  const [visible, setVisible] = useState(1);
-  const [done, setDone] = useState(false);
-  const events = useMemo(() => [
-    'He liked her first. Said nothing.',
-    'Had a lot to say. Typed nothing.',
-    'Tried to explain. Immediately panicked.',
-    'Disappeared for a while. Classic move.',
-    'She started liking him during silence. Irony.',
-    `Meanwhile you chose ${profile.snackChoice || 'a suspicious snack'} in court.`,
-    `You ranked ${profile.topChoice || 'chaotic behavior'} as Priority 1.`,
-    'Talk happened. Confusion reduced.',
-    'Date happened. We are here now.'
-  ], [profile]);
+function Slide2({ profile, theme, onNext }) {
+  const [revealed, setRevealed] = useState(0);
+  const done = revealed >= 9;
+  useBodyBg('#F5F0E8');
+  useFoodParticles(theme, false);
+  const panels = useMemo(() => [
+    'he liked her first. said nothing.',
+    'had a lot to say. typed nothing.',
+    'then he told her. immediately regretted it.',
+    'panicked. disappeared. classic.',
+    'she started liking him. during the silence.',
+    'both assumed. neither asked.',
+    "weeks of 'i'm fine' energy.",
+    'talked. sorted it out. somehow.',
+    'went on a date. and now we\'re here.'
+  ], []);
 
-  const advance = useCallback(() => {
-    setVisible(v => {
-      const next = Math.min(events.length, v + 1);
-      if (next >= events.length) setDone(true);
-      return next;
-    });
-  }, [events.length]);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d', { alpha: false });
-    const resize = () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; };
-    resize();
-    window.addEventListener('resize', resize);
-    let rafId = 0;
-
-    const wrapText = (text, maxWidth) => {
-      const words = text.split(' ');
-      const lines = [];
-      let line = '';
-      words.forEach(word => {
-        const next = line ? `${line} ${word}` : word;
-        if (ctx.measureText(next).width > maxWidth && line) {
-          lines.push(line);
-          line = word;
-        } else {
-          line = next;
-        }
-      });
-      if (line) lines.push(line);
-      return lines;
-    };
-
-    const draw = () => {
-      rafId = requestAnimationFrame(draw);
-      const w = canvas.width;
-      const h = canvas.height;
-      ctx.clearRect(0, 0, w, h);
-      ctx.fillStyle = '#f5f0e8';
-      ctx.fillRect(0, 0, w, h);
-      ctx.fillStyle = 'rgba(26,26,26,0.05)';
-      for (let y = 0; y < h; y += 6) {
-        for (let x = 0; x < w; x += 6) ctx.fillRect(x, y, 1, 1);
-      }
-
-      const top = 88;
-      const bottom = h - 120;
-      const centerX = w * 0.5;
-      const step = (bottom - top) / Math.max(1, events.length - 1);
-      const cardW = Math.min(480, w * 0.38);
-      const cardH = Math.max(64, Math.min(108, step * 0.8));
-
-      ctx.strokeStyle = '#1a1a1a';
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.moveTo(centerX, top - 24);
-      ctx.lineTo(centerX, bottom + 24);
-      ctx.stroke();
-
-      for (let i = 0; i < visible; i += 1) {
-        const y = top + i * step;
-        const left = i % 2 === 0;
-        const cardX = left ? centerX - cardW - 42 : centerX + 42;
-        const dotX = left ? centerX - 8 : centerX + 8;
-
-        ctx.fillStyle = '#fff9ef';
-        ctx.strokeStyle = '#1a1a1a';
-        ctx.lineWidth = 2;
-        ctx.fillRect(cardX, y - cardH / 2, cardW, cardH);
-        ctx.strokeRect(cardX, y - cardH / 2, cardW, cardH);
-
-        ctx.fillStyle = '#1a1a1a';
-        ctx.font = '18px Caveat, cursive';
-        const lines = wrapText(events[i], cardW - 24);
-        lines.slice(0, 3).forEach((line, idx) => {
-          ctx.fillText(line, cardX + 12, y - cardH / 2 + 24 + idx * 22);
-        });
-
-        ctx.fillStyle = '#CC2200';
-        ctx.beginPath();
-        ctx.arc(dotX, y, 8, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.strokeStyle = '#1a1a1a';
-        ctx.beginPath();
-        ctx.moveTo(left ? dotX + 8 : dotX - 8, y);
-        ctx.lineTo(left ? cardX + cardW : cardX, y);
-        ctx.stroke();
-      }
-
-      if (done) {
-        ctx.save();
-        ctx.translate(w * 0.1, h * 0.92);
-        ctx.rotate(-0.06);
-        ctx.fillStyle = '#1a1a1a';
-        ctx.font = '24px Caveat, cursive';
-        ctx.fillText("brought to you by Niggesh, who still can't believe this worked.", 0, 0);
-        ctx.restore();
-      }
-    };
-    draw();
-    const handle = () => {
-      if (done) onNext(); else advance();
-    };
-    canvas.addEventListener('pointerdown', handle);
-    return () => {
-      cancelAnimationFrame(rafId);
-      window.removeEventListener('resize', resize);
-      canvas.removeEventListener('pointerdown', handle);
-    };
-  }, [advance, done, onNext, visible]);
+  const revealNext = () => {
+    if (!done) {
+      setRevealed(9);
+    }
+    onNext();
+  };
 
   return (
-    <div className="act2-scene scene-2 paper-world">
-      <canvas ref={canvasRef} className="scene-canvas" />
-      <p className="paper-hint">{done ? 'tap to continue ▼' : 'tap to reveal timeline'}</p>
+    <div className="act2-scene scene-2 paper-world comic-world" onClick={revealNext}>
+      <svg width="0" height="0" aria-hidden="true">
+        <filter id="paperNoise">
+          <feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="3" stitchTiles="stitch" />
+          <feColorMatrix type="saturate" values="0" />
+          <feComponentTransfer>
+            <feFuncA type="table" tableValues="0 0.08" />
+          </feComponentTransfer>
+        </filter>
+      </svg>
+      <div className="comic-grid">
+        {panels.map((caption, index) => {
+          const isOpen = index < revealed;
+          return (
+            <div key={index} className={`comic-panel ${isOpen ? 'open' : 'closed'} ${index === 8 ? 'warm' : ''}`}>
+              {isOpen ? <ComicArt index={index} /> : null}
+              {isOpen ? <div className="comic-caption">{caption}</div> : null}
+            </div>
+          );
+        })}
+      </div>
+      <div className={`comic-banner ${done ? 'unroll' : ''}`} style={{ borderColor: theme.accentColor }}>brought to you by Niggesh, who still can't believe this worked.</div>
+      <p className="paper-hint" style={{ color: theme.accentColor }}>{done ? 'tap to continue ▼' : 'tap to reveal panel'}</p>
     </div>
   );
 }
 
-function Slide3({ profile, onNext }) {
+function ComicArt({ index }) {
+  return (
+    <svg viewBox="0 0 300 130" className="comic-art" aria-hidden="true">
+      <g stroke="#1A1A1A" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round">
+        {index === 0 && (
+          <>
+            <circle cx="70" cy="38" r="11" /><path d="M70 49 L70 80 M70 60 L57 69 M70 60 L83 69" />
+            <circle cx="230" cy="42" r="11" /><path d="M230 53 L230 84 M230 64 L217 73 M230 64 L243 73" />
+            <path d="M96 20 L101 15 L106 20 L101 24 Z" />
+          </>
+        )}
+        {index === 1 && (
+          <>
+            <rect x="92" y="20" width="116" height="86" />
+            <rect x="104" y="34" width="92" height="54" />
+            <line x1="116" y1="76" x2="190" y2="76" />
+            <line x1="162" y1="76" x2="162" y2="70" />
+          </>
+        )}
+        {index === 2 && (
+          <>
+            <circle cx="90" cy="36" r="11" /><path d="M90 47 L90 82" />
+            <circle cx="198" cy="40" r="11" /><path d="M198 51 L198 86" />
+            <rect x="130" y="53" width="26" height="14" />
+            <path d="M72 86 l-16 16 M72 90 l-13 18" />
+          </>
+        )}
+        {index === 3 && (
+          <>
+            <circle cx="104" cy="40" r="11" /><path d="M104 52 L118 76 M104 58 L128 64" />
+            <path d="M68 20 L95 28 M66 30 L95 36 M64 40 L96 44" />
+            <path d="M145 102 C180 96, 210 102, 244 98" />
+          </>
+        )}
+        {index === 4 && (
+          <>
+            <circle cx="150" cy="40" r="11" /><path d="M150 52 L150 84" />
+            <path d="M170 24 L175 19 L180 24 L175 28 Z" />
+            <path d="M188 30 q8 8 0 16" />
+          </>
+        )}
+        {index === 5 && (
+          <>
+            <line x1="150" y1="10" x2="150" y2="118" strokeWidth="3" />
+            <circle cx="95" cy="42" r="10" /><circle cx="205" cy="42" r="10" />
+            <rect x="52" y="60" width="78" height="24" /><rect x="170" y="60" width="78" height="24" />
+          </>
+        )}
+        {index === 6 && (
+          <>
+            <rect x="48" y="24" width="84" height="86" />
+            <rect x="168" y="24" width="84" height="86" />
+            <line x1="60" y1="46" x2="118" y2="46" /><line x1="60" y1="58" x2="104" y2="58" />
+            <line x1="180" y1="46" x2="238" y2="46" /><line x1="180" y1="58" x2="224" y2="58" />
+          </>
+        )}
+        {index === 7 && (
+          <>
+            <circle cx="92" cy="42" r="10" /><path d="M92 52 L92 84" />
+            <circle cx="208" cy="42" r="10" /><path d="M208 52 L208 84" />
+            <path d="M118 84 L182 84" />
+            <rect x="140" y="88" width="22" height="12" />
+          </>
+        )}
+        {index === 8 && (
+          <>
+            <circle cx="118" cy="42" r="10" /><path d="M118 52 L118 82" />
+            <circle cx="184" cy="42" r="10" /><path d="M184 52 L184 82" />
+            <path d="M216 68 L258 68" /><path d="M252 64 L258 68 L252 72" />
+            <path d="M84 20 L88 14 L92 20 L88 24 Z" />
+          </>
+        )}
+      </g>
+    </svg>
+  );
+}
+
+function Slide3({ profile, theme, onNext }) {
   const energyTone = useMemo(() => {
     const top = (profile.topChoice || '').toLowerCase();
     if (top.includes('trip') || top.includes('adventure')) return 'adventure';
     if (top.includes('home') || top.includes('couch')) return 'calm';
     return 'chaos';
   }, [profile]);
+  useBodyBg(theme.bgColor);
+  useFoodParticles(theme, true, 10);
 
   const reportLines = useMemo(() => [
     'KASUKABE DETECTIVE AGENCY',
@@ -2166,19 +2498,22 @@ function Slide3({ profile, onNext }) {
     'Clearance Level: Action Kamen Gold',
     '',
     'FINDING 1:',
-    `Subject selected ${profile.snackChoice || 'something suspicious'} under`,
-    'extreme pudding-trial pressure.',
+    `Subject selected ${theme.label} under extreme pudding-trial pressure.`,
+    theme.personalityLine,
     '',
     'FINDING 2:',
-    `Subject ranked ${profile.topChoice || 'chaotic behavior'} as Priority 1.`,
+    theme.reportFinding2,
     '',
     'FINDING 3:',
-    `Diary response on the ghost question: ${profile.quizAnswers?.[0] || 'unknown'}.`,
+    theme.reportFinding3,
+    theme.ghostLine,
+    theme.rhythmLine,
     `Personality inference: ${energyTone.toUpperCase()} ENERGY.`,
     '',
     'CONCLUSION:',
-    'something about this is dangerous but correct.'
-  ], [profile, energyTone]);
+    theme.conclusionText,
+    `${theme.topChoice} ranked #1. this is either excellent or alarming.`
+  ], [theme, energyTone]);
   const [visible, setVisible] = useState(0);
   const [done, setDone] = useState(false);
 
@@ -2193,6 +2528,9 @@ function Slide3({ profile, onNext }) {
   return (
     <div className={`act2-scene scene-3 act2-frame act2-frame-paper profile-tone-${energyTone}`} onClick={() => (done ? onNext() : setVisible(v => Math.min(reportLines.length, v + 1)))}>
       <div className="paper-report">
+        <div className="report-watermark wm-a">{theme.floatingEmoji}</div>
+        <div className="report-watermark wm-b">{theme.floatingEmoji}</div>
+        <div className="report-watermark wm-c">{theme.floatingEmoji}</div>
         <div className="report-header">
           <div>KASUKABE INVESTIGATION REPORT</div>
           <div className="classified">CLASSIFIED</div>
@@ -2208,176 +2546,435 @@ function Slide3({ profile, onNext }) {
   );
 }
 
-function Slide4({ profile, onNext }) {
+function Slide4({ profile, theme, onNext }) {
   const words = ['he', 'liked', 'you', 'first.'];
   const [index, setIndex] = useState(-1);
-  const [ghost, setGhost] = useState(false);
+  const [lightStage, setLightStage] = useState(0);
+  const [firstCorner, setFirstCorner] = useState(false);
+  const [subText, setSubText] = useState('');
   const [stamp, setStamp] = useState(false);
+  const [burst, setBurst] = useState([]);
   const [done, setDone] = useState(false);
   const [shake, setShake] = useState(false);
+  const [stampShake, setStampShake] = useState(false);
+  const fullSub = "on record. officially. can't undo it. it's done.";
+  const romanceLevel = Math.min(4, Math.max(0, Math.max(index + 1, lightStage)));
+  const romanceOpacity = [0.08, 0.18, 0.34, 0.58, 0.86][romanceLevel];
+  const romanceBgByLevel = [
+    'radial-gradient(circle at 50% 35%, #2a0f1e 0%, #180913 50%, #0d070b 100%)',
+    'radial-gradient(circle at 50% 34%, #4b1731 0%, #28111e 50%, #160a12 100%)',
+    'radial-gradient(circle at 50% 33%, #7a2b50 0%, #4d1c38 48%, #2c131f 100%)',
+    'radial-gradient(circle at 50% 32%, #f7d2e0 0%, #fff0f5 42%, #fffdfd 100%)',
+    'radial-gradient(circle at 50% 31%, #ffffff 0%, #fffafc 34%, #fff0f5 72%, #ffe0eb 100%)'
+  ];
+  const textColorByLevel = ['#fff0f6', '#ffe7f0', '#fff3f7', '#8b2d56', '#7e1e48'];
+  const stampColorByLevel = ['#ffb8d3', '#ffc7dd', '#ffd6e8', '#ff7aa8', '#e82267'];
+
+  useBodyBg(romanceBgByLevel[romanceLevel]);
+  useFoodParticles(theme, false);
 
   useEffect(() => {
-    const timers = [
-      setTimeout(() => setIndex(0), 800),
-      setTimeout(() => setIndex(1), 1500),
-      setTimeout(() => setIndex(2), 2100),
-      setTimeout(() => setIndex(3), 2800),
-      setTimeout(() => setShake(true), 2800),
-      setTimeout(() => setShake(false), 3400),
-      setTimeout(() => setGhost(true), 5000),
-      setTimeout(() => setStamp(true), 5400),
-      setTimeout(() => setDone(true), 8200),
+    let cancelled = false;
+    const waits = [];
+    const wait = (ms) => new Promise(resolve => {
+      const id = setTimeout(resolve, ms);
+      waits.push(id);
+    });
+
+    const run = async () => {
+      setIndex(-1);
+      await wait(500);
+      if (cancelled) return;
+      setIndex(0);
+      await wait(500);
+      if (cancelled) return;
+      setIndex(1);
+      await wait(500);
+      if (cancelled) return;
+      setIndex(2);
+      await wait(500);
+      if (cancelled) return;
+      setIndex(3);
+      setShake(true);
+      await wait(800);
+      if (cancelled) return;
+      setShake(false);
+      setFirstCorner(true);
+      await wait(0);
+      if (cancelled) return;
+      let i = 0;
+      while (i <= fullSub.length && !cancelled) {
+        setSubText(fullSub.slice(0, i));
+        i += 1;
+        // step 4 typing speed
+        // eslint-disable-next-line no-await-in-loop
+        await wait(35);
+      }
+      await wait(800);
+      if (cancelled) return;
+      setStamp(true);
+      setStampShake(true);
+      await wait(180);
+      if (cancelled) return;
+      setStampShake(false);
+      await wait(260);
+      if (cancelled) return;
+      setDone(true);
+    };
+
+    run();
+    const lightTimers = [
+      setTimeout(() => setLightStage(1), 650),
+      setTimeout(() => setLightStage(2), 1850),
+      setTimeout(() => setLightStage(3), 3250),
+      setTimeout(() => setLightStage(4), 4700),
     ];
-    return () => timers.forEach(clearTimeout);
+    return () => {
+      cancelled = true;
+      waits.forEach(clearTimeout);
+      lightTimers.forEach(clearTimeout);
+    };
   }, []);
 
+  useEffect(() => {
+    if (!stamp) return;
+    const start = Array.from({ length: 20 }).map((_, i) => ({
+      id: i,
+      x: 50,
+      y: 52,
+      vx: -2 + Math.random() * 4,
+      vy: -5 - Math.random() * 3,
+      life: 1,
+    }));
+    setBurst(start);
+    let raf = 0;
+    const tick = () => {
+      setBurst(prev => prev
+        .map(p => ({ ...p, x: p.x + p.vx, y: p.y + p.vy, vy: p.vy + 0.22, life: p.life - 0.03 }))
+        .filter(p => p.life > 0)
+      );
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [stamp]);
+
   return (
-    <div className={`act2-scene scene-4 act2-frame act2-frame-dark ${shake ? 'scene-shake' : ''}`} onClick={() => done && onNext()}>
-      {index >= 0 && !ghost && <div className={`center-word ${index === 3 ? 'first-word' : ''}`}>{words[index]}</div>}
-      {ghost && <div className="ghost-word">first.</div>}
-      {stamp && <div className="massive-stamp">FIRST.</div>}
-      <div className="record-line-wrap">
-        <p className="record-line">on record. officially. can't undo it. it's done. also: {profile.topChoice || 'chaos'} was definitely a clue.</p>
+    <div className={`act2-scene scene-4 scene-romantic-warm romance-level-${romanceLevel} act2-frame act2-frame-dark ${shake ? 'scene-shake-heavy' : ''} ${stampShake ? 'scene-stamp-shake' : ''}`} style={{ background: romanceBgByLevel[romanceLevel] }} onClick={() => done && onNext()}>
+      <div className="romance-bloom" style={{ opacity: romanceOpacity }} aria-hidden="true">
+        {Array.from({ length: 12 }).map((_, i) => (
+          <span key={i} className="romance-heart" style={{ left: `${6 + i * 8}%`, animationDelay: `${(i % 6) * 0.4}s` }}>❤</span>
+        ))}
       </div>
-      <ShinCorner pose="faceDown" className="corner-bottom-right" />
+      <div className="romance-wash" style={{ opacity: Math.min(1, romanceLevel * 0.26) }} aria-hidden="true" />
+      {index >= 0 && (
+        <div className={`center-word strict-word ${index === 3 ? 'strict-first' : ''} ${firstCorner ? 'first-corner' : ''}`} style={{ color: textColorByLevel[romanceLevel] }}>{words[index]}</div>
+      )}
+      {subText && <p className="record-line strict-record-line" style={{ color: textColorByLevel[romanceLevel] }}>{subText}</p>}
+      {stamp && <div className="massive-stamp strict-stamp-slam" style={{ color: stampColorByLevel[romanceLevel], borderColor: stampColorByLevel[romanceLevel], boxShadow: `0 0 0 4px rgba(232, 34, 103, 0.08), 0 0 40px rgba(232, 34, 103, 0.22)` }}>FIRST.</div>}
+      {burst.map(p => (
+        <span
+          key={p.id}
+          className="stamp-food-particle"
+          style={{ left: `${p.x}%`, top: `${p.y}%`, opacity: p.life, color: theme.particleColor }}
+        >
+          {theme.floatingEmoji}
+        </span>
+      ))}
       {done && <p className="scene-hint">▼</p>}
     </div>
   );
 }
 
-function Slide5({ profile, onNext }) {
-  const action = (profile.topChoice || 'show up').toLowerCase();
-  const [noStage, setNoStage] = useState(0);
-  const [ballText, setBallText] = useState('');
-  const [reformed, setReformed] = useState(false);
+function Slide5({ profile, theme, onNext }) {
+  const [noClickCount, setNoClickCount] = useState(0);
+  const [angryBall, setAngryBall] = useState(null);
+  const [noReplacement, setNoReplacement] = useState(false);
+  const [noShrink, setNoShrink] = useState(false);
   const [done, setDone] = useState(false);
-  const [tint, setTint] = useState(false);
+  const [loadingPhase, setLoadingPhase] = useState(true);
+  const [loadingProgress, setLoadingProgress] = useState(0);
+  const [loadingLabel, setLoadingLabel] = useState('buffering...');
+  const [questionWordCount, setQuestionWordCount] = useState(0);
+  const [showVibeNote, setShowVibeNote] = useState(true);
+  const questionWords = useMemo(() => ['will', 'you', 'be', 'my', 'girlfriend?'], []);
+
+  const handleYes = () => {
+    setDone(true);
+  };
+
+  useBodyBg('radial-gradient(circle at 50% 20%, #fff8fb 0%, #ffeaf3 45%, #ffdbe8 100%)');
+  useFoodParticles(theme, true, 16);
 
   useEffect(() => {
-    if (noStage !== 2) return;
-    const phrase = 'okay. okay. okay okay okay okay.';
-    let index = 0;
-    setBallText('');
-    const timer = setInterval(() => {
-      index += 1;
-      setBallText(phrase.split(' ').slice(0, index).join(' '));
-      if (index >= phrase.split(' ').length) clearInterval(timer);
-    }, 200);
-    const finishTimer = setTimeout(() => {
-      try {
-        const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
-        if (AudioContextCtor) {
-          const audio = new AudioContextCtor();
-          const osc = audio.createOscillator();
-          const gain = audio.createGain();
-          osc.type = 'sine';
-          osc.frequency.setValueAtTime(220, audio.currentTime);
-          osc.frequency.exponentialRampToValueAtTime(90, audio.currentTime + 0.35);
-          gain.gain.setValueAtTime(0.1, audio.currentTime);
-          gain.gain.exponentialRampToValueAtTime(0.001, audio.currentTime + 0.35);
-          osc.connect(gain).connect(audio.destination);
-          osc.start();
-          osc.stop(audio.currentTime + 0.36);
-        }
-      } catch {}
-      setReformed(true);
-      setTimeout(() => setDone(true), 700);
-    }, 3000);
-    return () => { clearInterval(timer); clearTimeout(finishTimer); };
-  }, [noStage]);
+    let cancelled = false;
+    const waits = [];
+    const wait = (ms) => new Promise(resolve => {
+      const id = setTimeout(resolve, ms);
+      waits.push(id);
+    });
 
-  const handleNo = () => {
-    if (noStage === 0) {
-      setNoStage(1);
-      setTint(true);
-      setTimeout(() => setTint(false), 2200);
+    const stages = [
+      { pct: 32, label: 'buffering...' },
+      { pct: 56, label: 'buffering the moment...' },
+      { pct: 80, label: 'buffering the courage...' },
+      { pct: 100, label: 'buffer ready.' },
+    ];
+
+    const tweenTo = (from, target, duration) => new Promise(resolve => {
+      const start = performance.now();
+      const tick = (now) => {
+        if (cancelled) return resolve();
+        const p = Math.min(1, (now - start) / duration);
+        setLoadingProgress(from + (target - from) * p);
+        if (p >= 1) resolve(); else requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    });
+
+    const run = async () => {
+      let current = 0;
+      for (let i = 0; i < stages.length; i += 1) {
+        if (cancelled) return;
+        const stage = stages[i];
+        setLoadingLabel(stage.label);
+        // eslint-disable-next-line no-await-in-loop
+        await tweenTo(current, stage.pct, 760 + i * 120);
+        current = stage.pct;
+        // eslint-disable-next-line no-await-in-loop
+        await wait(3000);
+      }
+      if (cancelled) return;
+      await wait(450);
+      if (cancelled) return;
+      setLoadingPhase(false);
+    };
+
+    run();
+    const vibeTimer = setTimeout(() => {
+      if (!cancelled) setShowVibeNote(false);
+    }, 5000);
+    return () => {
+      cancelled = true;
+      waits.forEach(clearTimeout);
+      clearTimeout(vibeTimer);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!done) return undefined;
+    const timer = setTimeout(() => onNext(), 850);
+    return () => clearTimeout(timer);
+  }, [done, onNext]);
+
+  useEffect(() => {
+    if (loadingPhase) {
+      setQuestionWordCount(0);
       return;
     }
-    if (noStage === 1) {
-      setNoStage(2);
-      setTint(true);
+    let cancelled = false;
+    let index = 0;
+    const tick = () => {
+      if (cancelled) return;
+      if (index <= questionWords.length) {
+        setQuestionWordCount(index);
+        index += 1;
+        setTimeout(tick, 300);
+      }
+    };
+    tick();
+    return () => {
+      cancelled = true;
+    };
+  }, [loadingPhase, questionWords]);
+
+  useEffect(() => {
+    if (!angryBall) return;
+    const timer = setTimeout(() => {
+      setAngryBall(prev => (prev ? { ...prev, exiting: true } : null));
+      setTimeout(() => {
+        setAngryBall(null);
+        if (angryBall.stage === 1) setNoShrink(true);
+        if (angryBall.stage === 2) setNoReplacement(true);
+      }, 300);
+    }, angryBall.duration);
+    return () => clearTimeout(timer);
+  }, [angryBall]);
+
+  const dismissBall = () => {
+    if (!angryBall) return;
+    setAngryBall(prev => (prev ? { ...prev, exiting: true } : null));
+    setTimeout(() => {
+      const stage = angryBall.stage;
+      setAngryBall(null);
+      if (stage === 1) setNoShrink(true);
+      if (stage === 2) setNoReplacement(true);
+    }, 300);
+  };
+
+  const handleNo = () => {
+    if (angryBall || noReplacement) return;
+    const next = noClickCount + 1;
+    setNoClickCount(next);
+    if (next === 1) {
+      setAngryBall({ stage: 1, size: '50vw', text: '...excuse me???', duration: 2500, exiting: false });
+      return;
+    }
+    if (next === 2) {
+      setAngryBall({ stage: 2, size: '80vw', text: 'okay. okay. okay okay okay okay.', duration: 3000, exiting: false });
     }
   };
 
   return (
-    <div className={`act2-scene scene-5 act2-frame act2-frame-dark ${tint ? 'red-tint' : ''}`} onClick={() => done && onNext()}>
-      <div className="yesno-wrap">
-        <h2 className="small-load">loading courage... calibrated for {action || 'chaos'} mode</h2>
-        <h1 className="pulse-question">will you be his girlfriend?</h1>
-        <div className="ask-buttons exact-two">
-          <button className="yes-btn yes-glow" onClick={() => setDone(true)}>YES</button>
-          {noStage < 2 ? (
-            <button className={`no-btn ${noStage === 1 ? 'small-no' : ''}`} onClick={handleNo}>NO 😡</button>
-          ) : (
-            <button className="no-btn no-turned-yes" onClick={() => setDone(true)}>yes (enthusiastically)</button>
-          )}
-        </div>
-      </div>
-      {noStage > 0 && (
-        <div className={`angry-ball ${noStage === 2 ? 'big-ball rapid-shake' : 'small-ball shake'}`}>
-          <div className="angry-emoji">
-            <img src={angryEmoji} alt="angry emoji" className="angry-emoji-img" />
+    <div className="act2-scene scene-5 scene-romantic-warm act2-frame act2-frame-dark" style={{ background: 'radial-gradient(circle at 50% 20%, #fff8fb 0%, #ffeaf3 45%, #ffdbe8 100%)' }} onClick={() => done && onNext()}>
+      {loadingPhase ? (
+        <div className="loading-phase-standalone loading-phase-light">
+          {showVibeNote && <p className="slide4-vibe-note slide5-vibe-note">yeah that was completely random from the game. just stay with me for a second and keep going.</p>}
+          <div className="courage-loader stage-rebuild">
+            <h3>{loadingLabel}</h3>
+            <div className="load-bar rebuild-bar"><div style={{ width: `${Math.max(0, Math.min(100, loadingProgress))}%` }} /></div>
           </div>
-          <div className="ball-copy">{noStage === 1 ? '...excuse me???' : ballText}</div>
+        </div>
+      ) : (
+        <div className="yesno-wrap romantic-ask">
+          <div className="romantic-orbs" aria-hidden="true">
+            {Array.from({ length: 10 }).map((_, i) => (
+              <span key={i} className="romantic-orb" style={{ left: `${8 + i * 9}%`, animationDelay: `${(i % 5) * 0.55}s` }}>❤</span>
+            ))}
+          </div>
+          <h1 className="pulse-question question-words-line">
+            {questionWords.map((word, index) => (
+              <span key={word} className={`question-word ${index < questionWordCount ? 'show' : ''}`}>{word}</span>
+            ))}
+          </h1>
+          <div className="ask-buttons exact-two">
+            <button className="yes-btn yes-glow" onPointerDown={handleYes} onClick={handleYes}>YES</button>
+            {!noReplacement ? (
+              <button className={`no-btn ${noShrink ? 'small-no' : ''}`} onClick={handleNo}>NO 😡</button>
+            ) : (
+              <button className="no-btn no-turned-yes" onPointerDown={handleYes} onClick={handleYes}>yes (enthusiastically)</button>
+            )}
+          </div>
         </div>
       )}
-      {reformed && <p className="after-error">the management has updated your options.</p>}
-      <ShinCorner pose={noStage >= 2 ? 'run' : 'idle'} className="corner-bottom-right" />
+      {angryBall && (
+        <div className={`angry-overlay-block ${angryBall.exiting ? 'angry-fade-out' : ''}`} onClick={dismissBall}>
+          <div className={`angry-ball ${angryBall.stage === 2 ? 'big-ball rapid-shake' : 'small-ball shake'}`} style={{ width: angryBall.size, height: angryBall.size }}>
+            <div className="angry-emoji">
+              <img src={angryEmoji} alt="angry emoji" className="angry-emoji-img" />
+            </div>
+            <div className="ball-copy">{angryBall.text}</div>
+          </div>
+        </div>
+      )}
+      <ShinCorner pose={noReplacement ? 'run' : 'idle'} className="corner-bottom-right" />
       {done && <p className="scene-hint">▼</p>}
     </div>
   );
 }
 
-function Slide6({ profile, onYes }) {
-  const [phase, setPhase] = useState('load');
-  const [progress, setProgress] = useState(0);
-  const [q1, setQ1] = useState('');
-  const [q2, setQ2] = useState('');
+function Slide6({ profile, theme, onYes }) {
   const [state, setState] = useState(0);
+  const [phase, setPhase] = useState('loading');
+  const [progress, setProgress] = useState(0);
+  const [loadLabel, setLoadLabel] = useState('loading courage...');
+  const [showShin, setShowShin] = useState(true);
+  const [shinExit, setShinExit] = useState(false);
+  const [loadFading, setLoadFading] = useState(false);
+  const [loadingComplete, setLoadingComplete] = useState(false);
+  const [partyReady, setPartyReady] = useState(false);
+  const [partyBurst, setPartyBurst] = useState([]);
   const [flash, setFlash] = useState('');
 
+  useBodyBg('radial-gradient(circle at center, #fffdfd 0%, #fff2f7 48%, #ffe0ea 100%)');
+  useFoodParticles(theme, false, 12);
+
   useEffect(() => {
-    if (phase !== 'load') return;
-    const timer = setInterval(() => {
-      setProgress(v => {
-        const next = Math.min(100, v + 8);
-        if (next === 100) {
-          clearInterval(timer);
-          setTimeout(() => setPhase('question'), 420);
-        }
-        return next;
-      });
-    }, 110);
-    return () => clearInterval(timer);
+    if (phase !== 'loading') return;
+    let cancelled = false;
+    const waits = [];
+    const wait = (ms) => new Promise(resolve => {
+      const id = setTimeout(resolve, ms);
+      waits.push(id);
+    });
+
+    const tweenTo = (from, target, duration) => new Promise(resolve => {
+      const start = performance.now();
+      const tick = (now) => {
+        if (cancelled) return resolve();
+        const p = Math.min(1, (now - start) / duration);
+        const next = from + (target - from) * p;
+        setProgress(next);
+        if (p >= 1) resolve(); else requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    });
+
+    const run = async () => {
+      setProgress(0);
+      setShowShin(true);
+      setShinExit(false);
+      setLoadFading(false);
+      setLoadingComplete(false);
+      await wait(1200);
+      if (cancelled) return;
+      setShinExit(true);
+      await wait(700);
+      if (cancelled) return;
+      setShowShin(false);
+
+      let current = 0;
+      setLoadLabel('loading courage...');
+      await tweenTo(current, 42, 900);
+      current = 42;
+      if (cancelled) return;
+      setLoadLabel('reconsidering everything...');
+      await tweenTo(current, 60, 700);
+      current = 60;
+      if (cancelled) return;
+      setLoadLabel('too late to stop now...');
+      await tweenTo(current, 81, 600);
+      current = 81;
+      if (cancelled) return;
+      setLoadLabel('okay fine. here.');
+      await tweenTo(current, 100, 400);
+      if (cancelled) return;
+      await wait(600);
+      if (cancelled) return;
+      setLoadFading(true);
+      await wait(400);
+      if (cancelled) return;
+      setLoadingComplete(true);
+      setPhase('party');
+      setPartyReady(true);
+    };
+
+    run();
+    return () => {
+      cancelled = true;
+      waits.forEach(clearTimeout);
+    };
   }, [phase]);
 
   useEffect(() => {
-    if (phase !== 'question') return;
-    const line1 = `so, after ${profile.snackChoice || 'all this'} -`;
-    const line2 = 'will you be his girlfriend?';
-    let i = 0;
-    let j = 0;
+    if (phase !== 'party') return undefined;
+    const icons = ['🎉', '🎊', '✨'];
+    const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+    const makePoppers = (side) =>
+      Array.from({ length: 14 }).map((_, i) => ({
+        side,
+        id: `${side}-${i}-${Math.floor(Math.random() * 100000)}`,
+        delay: Math.floor(Math.random() * 1700),
+        streamDelay: Math.floor(Math.random() * 1700),
+        offset: Math.floor(Math.random() * 160) - 80,
+        iconMain: pick(icons),
+        iconStream: pick(['🎊', '✨']),
+        duration: 700 + Math.floor(Math.random() * 700),
+      }));
 
-    const type2 = () => {
-      if (j <= line2.length) {
-        setQ2(line2.slice(0, j));
-        j += 1;
-        setTimeout(type2, 90 + Math.random() * 170);
-      }
-    };
-
-    const type1 = () => {
-      if (i <= line1.length) {
-        setQ1(line1.slice(0, i));
-        i += 1;
-        setTimeout(type1, 120 + Math.random() * 220);
-      } else {
-        setTimeout(type2, 900);
-      }
-    };
-
-    type1();
-  }, [phase, profile]);
+    const burst = [...makePoppers('left'), ...makePoppers('right')];
+    setPartyBurst(burst);
+  }, [phase]);
 
   const handleNo = () => {
     if (state === 0) {
@@ -2394,92 +2991,127 @@ function Slide6({ profile, onYes }) {
   };
 
   return (
-    <div className={`act2-scene scene-6 act2-frame act2-frame-dark ${flash}`}>
-      {phase === 'load' && (
-        <div className="courage-loader">
-          <h3>loading courage...</h3>
-          <div className="load-bar"><div style={{ width: `${progress}%` }} /></div>
-          <p>{progress >= 80 ? 'ERROR: too scared... retrying.' : 'loading the thing. he made me do this.'}</p>
+    <div className={`act2-scene scene-6 scene-romantic-warm act2-frame act2-frame-dark ${flash}`} style={{ background: 'radial-gradient(circle at center, #fffdfd 0%, #fff2f7 48%, #ffe0ea 100%)' }}>
+      {phase === 'loading' && (
+        <div className={`loading-phase-standalone ${loadFading ? 'loading-fade-out' : ''}`}>
+          {showShin && (
+            <div className={`loading-shin ${shinExit ? 'walk-out' : 'walk-in'}`}>
+              <ShinCorner pose="sign" className="corner-inline" />
+              <div className="loading-sign">buffering the thing. not my idea.</div>
+            </div>
+          )}
+          <div className="courage-loader stage-rebuild">
+            <h3>{loadLabel}</h3>
+            <div className="load-bar rebuild-bar"><div style={{ width: `${Math.max(0, Math.min(100, progress))}%` }} /></div>
+          </div>
         </div>
       )}
 
-      {phase === 'question' && (
-        <div className="ask-wrap yesno-wrap">
-          <h2>{q1}</h2>
-          <h1 className="pulse-question">{q2}</h1>
-          <div className="ask-buttons exact-two">
-            <button className="yes-btn yes-glow" onClick={onYes}>YES</button>
-            <button className={`no-btn ${state > 0 ? 'broken' : ''} ${state === 2 ? 'no-turned-yes' : ''}`} onClick={state === 2 ? onYes : handleNo}>{state === 2 ? 'yes (enthusiastically)' : 'NO 😡'}</button>
+      {phase === 'party' && (
+        <div className="party-stage party-stage-big" style={{ zIndex: 10 }}>
+          <div className="party-poppers party-left" aria-hidden="true">
+            {partyBurst.filter((p) => p.side === 'left').map((item) => (
+              <span
+                key={item.id}
+                className="party-pop"
+                style={{
+                  animationDelay: `${item.delay}ms`,
+                  animationDuration: `${item.duration}ms`,
+                  marginTop: `${item.offset}px`,
+                }}
+              >
+                {item.iconMain}
+              </span>
+            ))}
           </div>
-          {state > 0 && (
-            <div className="angry-emoji-pop">
-              <img src={angryEmoji} alt="angry emoji" className="angry-emoji-pop-img" />
-            </div>
-          )}
+          <div className="party-poppers party-right" aria-hidden="true">
+            {partyBurst.filter((p) => p.side === 'right').map((item) => (
+              <span
+                key={item.id}
+                className="party-pop"
+                style={{
+                  animationDelay: `${item.delay}ms`,
+                  animationDuration: `${item.duration}ms`,
+                  marginTop: `${item.offset}px`,
+                }}
+              >
+                {item.iconMain}
+              </span>
+            ))}
+          </div>
+          <div className="party-poppers party-left party-left-stream" aria-hidden="true">
+            {partyBurst
+              .filter((p) => p.side === 'left')
+              .slice(0, 8)
+              .map((item) => (
+                <span
+                  key={`sl-${item.id}`}
+                  className="party-pop party-pop-stream"
+                  style={{
+                    animationDelay: `${item.streamDelay}ms`,
+                    animationDuration: `${item.duration + 300}ms`,
+                    marginTop: `${item.offset * 0.8}px`,
+                  }}
+                >
+                  {item.iconStream}
+                </span>
+              ))}
+          </div>
+          <div className="party-poppers party-right party-right-stream" aria-hidden="true">
+            {partyBurst
+              .filter((p) => p.side === 'right')
+              .slice(0, 8)
+              .map((item) => (
+                <span
+                  key={`sr-${item.id}`}
+                  className="party-pop party-pop-stream"
+                  style={{
+                    animationDelay: `${item.streamDelay}ms`,
+                    animationDuration: `${item.duration + 300}ms`,
+                    marginTop: `${item.offset * 0.8}px`,
+                  }}
+                >
+                  {item.iconStream}
+                </span>
+              ))}
+          </div>
+          <h1 style={{ margin: 0, fontFamily: '"Press Start 2P"', fontSize: 'clamp(28px, 5vw, 68px)', color: '#8d2d56', textAlign: 'center', padding: '0 20px', lineHeight: 1.4, maxWidth: '900px', position: 'relative', zIndex: 10 }}>
+            yay! so it&apos;s official now!
+          </h1>
         </div>
       )}
-      {phase === 'question' && <ShinCorner pose={state === 2 ? 'run' : 'sign'} className="corner-bottom-right" />}
     </div>
   );
 }
 
-function Slide7({ profile }) {
-  const [step, setStep] = useState(0);
-  const runnerRef = useRef(null);
-
-  useEffect(() => {
-    const end = Date.now() + 3800;
-    const frame = () => {
-      confetti({ particleCount: 12, spread: 70, origin: { x: Math.random(), y: Math.random() * 0.4 }, colors: ['#f9d423', '#ff4e50', '#53d8fb', '#9bff8a'] });
-      if (Date.now() < end) requestAnimationFrame(frame);
-    };
-    frame();
-    const timers = [setTimeout(() => setStep(1), 1200), setTimeout(() => setStep(2), 3200), setTimeout(() => setStep(3), 5000)];
-    return () => timers.forEach(clearTimeout);
-  }, []);
-
-  useEffect(() => {
-    const canvas = runnerRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d', { alpha: true });
-    canvas.width = 220;
-    canvas.height = 80;
-    let t = 0;
-    const draw = () => {
-      t += 1;
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      const x = 20 + ((t * 2.6) % 180);
-      ctx.fillStyle = '#ffebc8'; ctx.fillRect(x, 22, 20, 20);
-      ctx.fillStyle = '#111'; ctx.fillRect(x + 4, 28, 4, 4); ctx.fillRect(x + 10, 28, 4, 4);
-      ctx.fillStyle = '#c22'; ctx.fillRect(x + 4, 35, 10, 3);
-      ctx.fillStyle = '#666'; ctx.fillRect(x - 6, 26 + Math.sin(t / 5) * 2, 10, 4);
-      ctx.fillRect(x - 6, 34 + Math.sin(t / 5) * 2, 6, 14);
-      ctx.fillRect(x + 16, 34 + Math.cos(t / 5) * 2, 6, 14);
-      requestAnimationFrame(draw);
-    };
-    draw();
-  }, []);
-
+function Slide7({ profile, theme }) {
   return (
-    <div className="act2-scene scene-7 act2-frame act2-frame-dark">
-      <canvas ref={runnerRef} className="runner-canvas" />
-      <div className="end-lines">
-        {step >= 1 && <p>Niggesh is going to be so embarrassed you saw this.</p>}
-        {step >= 2 && <p>good.</p>}
-        {step >= 2 && <p>you picked {profile.snackChoice || 'evidence'} and ranked {profile.topChoice || 'chaos'} first. very on brand.</p>}
-        {step >= 3 && <p>date 2 loading...</p>}
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 2147483647,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: 'radial-gradient(circle at center, #fffdfd 0%, #fff1f7 46%, #ffdbe8 100%)',
+        overflow: 'hidden',
+        color: '#8d2d56',
+      }}
+    >
+      <div style={{ position: 'absolute', left: '5%', top: 0, bottom: 0, display: 'flex', flexDirection: 'column', justifyContent: 'space-around', alignItems: 'center', fontSize: 'clamp(32px, 5vw, 64px)', pointerEvents: 'none' }}>
+        <div>🎉</div>
+        <div>🎊</div>
+        <div>🎉</div>
       </div>
-      {step >= 3 && (
-        <div className="gps-loader">
-          <div className="tile-grid" />
-          <div className="route-line" />
-          <div className="destination-pin">wherever you want</div>
-          <div className="gps-label">📍 date 2 loading...</div>
-          <div className="gps-ready">ready when you are.</div>
-        </div>
-      )}
-      <ShinCorner pose="run" className="corner-bottom-right" />
-      {step >= 3 && <p className="scene-hint paper-hint">▼</p>}
+      <div style={{ position: 'absolute', right: '5%', top: 0, bottom: 0, display: 'flex', flexDirection: 'column', justifyContent: 'space-around', alignItems: 'center', fontSize: 'clamp(32px, 5vw, 64px)', pointerEvents: 'none' }}>
+        <div>🎊</div>
+        <div>🎉</div>
+        <div>🎊</div>
+      </div>
+      <h1 style={{ margin: 0, fontFamily: '"Press Start 2P"', fontSize: 'clamp(28px, 5vw, 68px)', color: '#8d2d56', textAlign: 'center', padding: '0 20px', lineHeight: 1.4, maxWidth: '900px' }}>
+        yay! so it&apos;s official now!
+      </h1>
     </div>
   );
 }
