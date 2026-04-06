@@ -284,7 +284,7 @@ canvas {
   background: #0a0a0a;
   color: #fff;
   font-family: 'Inter', sans-serif; display: flex; flex-direction: column; justify-content: center; align-items: center;
-  padding: 40px; text-align: center; position: relative; overflow-y: auto;
+  padding: 0; text-align: center; position: relative; overflow: hidden;
 }
 .slide-content { max-width: 600px; width: 100%; animation: fadeIn 1s forwards; max-height: 80vh; }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
@@ -329,6 +329,8 @@ canvas {
   align-items: center;
   justify-content: center;
   cursor: pointer;
+  overflow: hidden;
+  isolation: isolate;
 }
 
 .act2-frame::before {
@@ -421,6 +423,21 @@ canvas {
 .report-signature {
   margin-top: 18px;
   font-size: 24px;
+}
+
+.profile-tone-adventure .paper-report {
+  border-color: #0f3f78;
+  box-shadow: 0 24px 60px rgba(15, 63, 120, 0.25);
+}
+
+.profile-tone-calm .paper-report {
+  border-color: #245f4f;
+  box-shadow: 0 24px 60px rgba(36, 95, 79, 0.25);
+}
+
+.profile-tone-chaos .paper-report {
+  border-color: #7a1f1f;
+  box-shadow: 0 24px 60px rgba(122, 31, 31, 0.28);
 }
 
 .scene-shake {
@@ -539,7 +556,35 @@ canvas {
   font-family: "Press Start 2P";
   font-size: 10px;
   line-height: 1.8;
-  padding: 24px;
+  padding: 8px 24px 24px;
+}
+
+.angry-emoji {
+  font-size: clamp(50px, 7vw, 96px);
+  line-height: 1;
+  margin-top: 16px;
+}
+
+.angry-emoji-img {
+  width: clamp(58px, 10vw, 130px);
+  height: clamp(58px, 10vw, 130px);
+  object-fit: contain;
+  image-rendering: auto;
+  filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.35));
+}
+
+.angry-emoji-pop {
+  margin-top: 18px;
+  font-size: clamp(30px, 5vw, 56px);
+  animation: pulseSoft 0.8s ease-in-out infinite;
+}
+
+.angry-emoji-pop-img {
+  width: clamp(48px, 8vw, 92px);
+  height: clamp(48px, 8vw, 92px);
+  object-fit: contain;
+  image-rendering: auto;
+  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.35));
 }
 
 .red-tint::after {
@@ -893,6 +938,7 @@ canvas {
   border: 3px solid #fff;
   padding: 24px;
   background: rgba(15, 23, 42, 0.9);
+  z-index: 2;
 }
 
 .load-bar {
@@ -910,6 +956,7 @@ canvas {
 .ask-wrap {
   text-align: center;
   width: min(980px, 96vw);
+  z-index: 2;
 }
 
 .ask-wrap h2 {

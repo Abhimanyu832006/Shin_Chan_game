@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import confetti from 'canvas-confetti';
 import './index.css';
 import { SPRITEMAP, initSprites } from './sprites';
+import angryEmoji from './assets/image.png';
 
 // Initialize
 initSprites();
@@ -474,152 +475,95 @@ function GameCanvas({
 
 function SnackGame({ onFinish }) {
   const canvasRef = useRef(null);
-  const audioCtxRef = useRef(null);
   const roundRef = useRef(0);
   const hoverRef = useRef(-1);
-  const selectedRef = useRef(-1);
-  const boardRectsRef = useRef([]);
-  const flashUntilRef = useRef(0);
-  const stampRef = useRef({ side: -1, start: 0 });
+  const selectedRef = useRef({ side: -1, at: 0 });
+  const boardsRef = useRef([]);
   const transitionRef = useRef({ mode: 'idle', start: 0, nextRound: 0 });
-  const labelRef = useRef({ full: '', shown: '', nextAt: 0 });
-  const dialogueRef = useRef({ full: '', shown: '', nextAt: 0, done: false });
+  const typeRef = useRef({ full: '', shown: '', at: 0 });
+  const dialogueRef = useRef({ full: '', shown: '', at: 0 });
 
   const rounds = [
-    { left: { id: 'biscuits', name: 'Chocolate biscuits' }, right: { id: 'chips', name: 'Chips' }, line: 'EXHIBIT A VERSUS EXHIBIT B. PICK THE GUILTY FOOD.' },
-    { left: { id: 'biryani', name: 'Biryani' }, right: { id: 'pizza', name: 'Pizza' }, line: 'ROUND TWO. BIRYANI OR PIZZA. NO MERCY.' },
-    { left: { id: 'mango', name: 'Mango ice cream' }, right: { id: 'chocoIce', name: 'Chocolate ice cream' }, line: 'ICE CREAM TRIAL. ONE OF THEM IS SUS.' },
-    { left: { id: 'maggi', name: 'Maggi' }, right: { id: 'burger', name: 'Burger' }, line: 'FAST FOOD HEARING. POINT AT THE CULPRIT.' },
-    { left: { id: 'samosa', name: 'Samosa' }, right: { id: 'chai', name: 'Chai' }, line: 'SNACK COURT CONTINUES. WHO IS GUILTY?' },
-    { left: { id: 'coffee', name: 'Cold coffee' }, right: { id: 'pudding', name: 'Kasukabe pudding' }, line: 'FINAL VERDICT. DECIDE THE FATE OF THE PUDDING.' }
+    { left: { id: 'biscuits', name: 'Chocolate Biscuits' }, right: { id: 'chips', name: 'Chips' }, line: 'Round 1. Exhibit A versus B. Pick the guilty snack.' },
+    { left: { id: 'biryani', name: 'Biryani' }, right: { id: 'pizza', name: 'Pizza Slice' }, line: 'Round 2. Biryani against pizza. Court is watching.' },
+    { left: { id: 'mango', name: 'Mango Ice Cream' }, right: { id: 'chocoIce', name: 'Chocolate Ice Cream' }, line: 'Round 3. Two frozen suspects. One verdict.' },
+    { left: { id: 'maggi', name: 'Maggi' }, right: { id: 'burger', name: 'Burger' }, line: 'Round 4. Noodles versus burger. Choose wisely.' },
+    { left: { id: 'samosa', name: 'Samosa' }, right: { id: 'chai', name: 'Chai Cup' }, line: 'Round 5. Samosa and chai are on trial.' },
+    { left: { id: 'coffee', name: 'Cold Coffee' }, right: { id: 'pudding', name: 'Kasukabe Pudding' }, line: 'Final round. Legendary pudding enters the courtroom.' }
   ];
 
-  const ensureAudio = () => {
-    if (!audioCtxRef.current) {
-      const Ctx = window.AudioContext || window.webkitAudioContext;
-      if (Ctx) audioCtxRef.current = new Ctx();
-    }
-    return audioCtxRef.current;
+  const setDialogue = (txt, now) => {
+    dialogueRef.current = { full: `Shin-chan: ${txt}`, shown: '', at: now };
   };
 
-  const playThud = () => {
-    const audio = ensureAudio();
-    if (!audio) return;
-    const osc = audio.createOscillator();
-    const gain = audio.createGain();
-    osc.type = 'triangle';
-    osc.frequency.setValueAtTime(80, audio.currentTime);
-    osc.frequency.exponentialRampToValueAtTime(35, audio.currentTime + 0.1);
-    gain.gain.setValueAtTime(0.16, audio.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, audio.currentTime + 0.1);
-    osc.connect(gain).connect(audio.destination);
-    osc.start();
-    osc.stop(audio.currentTime + 0.12);
+  const setHoverType = (txt, now) => {
+    typeRef.current = { full: txt, shown: '', at: now };
   };
 
-  const setDialogue = (text, now) => {
-    dialogueRef.current = { full: `Shin-chan: ${text}`, shown: '', nextAt: now, done: false };
-  };
-
-  const drawSteam = (ctx, x, y, time) => {
-    const drift = Math.sin(time / 420) * 2;
-    ctx.fillStyle = 'rgba(255,255,255,0.75)';
-    for (let i = 0; i < 3; i += 1) {
-      for (let p = 0; p < 7; p += 1) {
-        const px = x + i * 8 + Math.sin((p + i) * 0.8) * 3 + drift;
-        const py = y - p * 4 - i * 3;
-        ctx.fillRect(Math.round(px), Math.round(py), 2, 2);
-      }
-    }
-  };
-
-  const drawFood = (ctx, food, cx, cy, time) => {
+  const drawFood = (ctx, id, x, y, scale, time) => {
     ctx.save();
-    ctx.translate(cx, cy);
-    if (food === 'biscuits') {
+    ctx.translate(x, y);
+    ctx.scale(scale, scale);
+    if (id === 'biscuits') {
       ctx.fillStyle = '#FFD700'; ctx.fillRect(-36, 24, 72, 12);
       ctx.fillStyle = '#6B3A2A'; ctx.fillRect(-34, -20, 68, 48);
-      ctx.fillStyle = '#3D1A0A'; for (let y = -18; y < -2; y += 4) ctx.fillRect(-30, y, 60, 2);
-      ctx.fillStyle = '#8B5A3A'; for (let y = -2; y < 20; y += 6) for (let x = -26; x < 26; x += 8) ctx.fillRect(x, y, 3, 3);
-      ctx.fillStyle = '#FFF'; ctx.font = '6px "Press Start 2P"'; ctx.fillText('CHOCO', -16, 32);
-    } else if (food === 'chips') {
+      ctx.fillStyle = '#3D1A0A'; for (let yy = -18; yy < -2; yy += 4) ctx.fillRect(-30, yy, 60, 2);
+      ctx.fillStyle = '#8B5A3A'; for (let yy = -2; yy < 20; yy += 6) for (let xx = -26; xx < 26; xx += 8) ctx.fillRect(xx, yy, 3, 3);
+    } else if (id === 'chips') {
       ctx.fillStyle = '#FFD700'; ctx.fillRect(-30, -28, 60, 18); ctx.fillRect(-36, -10, 72, 36); ctx.fillRect(-25, 26, 50, 20);
-      ctx.fillStyle = '#FFB800'; ctx.fillRect(-30, -30, 10, 8); ctx.fillRect(20, -30, 10, 8);
       ctx.fillStyle = '#CC2200'; for (let i = -28; i < 34; i += 6) ctx.fillRect(i, -4 + Math.floor(i / 10), 16, 4);
-      ctx.fillStyle = '#FFF'; ctx.fillRect(-14, 4, 30, 18);
+      ctx.fillStyle = '#FFFFFF'; ctx.fillRect(-14, 4, 30, 18);
       ctx.fillStyle = '#FFDB58'; ctx.beginPath(); ctx.ellipse(0, -18, 10, 5, 0, 0, Math.PI * 2); ctx.fill();
-    } else if (food === 'biryani') {
+    } else if (id === 'biryani') {
       ctx.fillStyle = '#8B4513'; ctx.fillRect(-40, 16, 80, 24);
-      ctx.fillStyle = '#5E2F15'; ctx.fillRect(-38, 38, 76, 4);
       ctx.fillStyle = '#FFFFF0'; ctx.fillRect(-34, -8, 68, 24);
       ctx.fillStyle = '#FFD700'; for (let i = -30; i < 32; i += 6) ctx.fillRect(i, -4 + ((i / 6) % 2), 4, 4);
       ctx.fillStyle = '#CC2200'; for (let i = 0; i < 9; i += 1) ctx.fillRect(-28 + i * 6, 6 + (i % 3), 2, 2);
       ctx.fillStyle = '#2D8A2D'; for (let i = 0; i < 8; i += 1) ctx.fillRect(-26 + i * 7, 10 + (i % 2), 3, 2);
-      drawSteam(ctx, -12, -8, time);
-    } else if (food === 'pizza') {
+    } else if (id === 'pizza') {
       ctx.fillStyle = '#E8922A'; ctx.beginPath(); ctx.moveTo(-44, 26); ctx.lineTo(44, 26); ctx.lineTo(0, -36); ctx.closePath(); ctx.fill();
       ctx.fillStyle = '#C47820'; ctx.fillRect(-44, 18, 88, 10);
       ctx.fillStyle = '#CC2200'; ctx.fillRect(-36, 8, 72, 8);
       ctx.fillStyle = '#FFD700'; ctx.fillRect(-38, -20, 76, 30);
-      ctx.fillStyle = '#8B0000'; [-18, 8, -2, 18, -26].forEach((x, i) => { ctx.beginPath(); ctx.arc(x, -6 + i * 5, 4, 0, Math.PI * 2); ctx.fill(); });
-      ctx.fillStyle = '#FFF'; ctx.fillRect(-20, 2, 2, 16);
-    } else if (food === 'mango' || food === 'chocoIce') {
+      ctx.fillStyle = '#8B0000'; [-18, 8, -2, 18, -26].forEach((xx, i) => { ctx.beginPath(); ctx.arc(xx, -6 + i * 5, 4, 0, Math.PI * 2); ctx.fill(); });
+    } else if (id === 'mango' || id === 'chocoIce') {
       ctx.fillStyle = '#C4935A'; ctx.beginPath(); ctx.moveTo(-24, 34); ctx.lineTo(24, 34); ctx.lineTo(0, -18); ctx.closePath(); ctx.fill();
-      ctx.fillStyle = '#8B6230'; for (let y = 30; y > -16; y -= 8) ctx.fillRect(-20, y, 40, 1);
-      for (let x = -16; x <= 16; x += 8) ctx.fillRect(x, -12, 1, 44);
-      ctx.fillStyle = food === 'mango' ? '#FF9A3C' : '#4A2200'; ctx.beginPath(); ctx.arc(0, -26, 26, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = id === 'mango' ? '#FF9A3C' : '#4A2200'; ctx.beginPath(); ctx.arc(0, -26, 26, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = '#FFF'; ctx.fillRect(-10, -34, 6, 6);
-      ctx.fillStyle = food === 'mango' ? '#FF8820' : '#1A0A00'; for (let i = 0; i < 6; i += 1) ctx.fillRect(-14 + i * 6, -18 + (i % 3), 3, 2);
-    } else if (food === 'maggi') {
+    } else if (id === 'maggi') {
       ctx.fillStyle = '#EEEEEE'; ctx.fillRect(-40, 14, 80, 30);
       ctx.fillStyle = '#AAAAAA'; ctx.fillRect(-40, 14, 80, 3);
       const cols = ['#FF9A3C', '#FFB347', '#FFC870'];
       for (let i = 0; i < 10; i += 1) { ctx.fillStyle = cols[i % 3]; ctx.fillRect(-34 + i * 7, 22 + (i % 2) * 2, 16, 2); }
-      ctx.fillStyle = '#CC2200'; ctx.beginPath(); ctx.moveTo(6, 20); ctx.lineTo(14, 24); ctx.lineTo(6, 28); ctx.closePath(); ctx.fill();
-      ctx.fillStyle = '#2D8A2D'; ctx.fillRect(4, 18, 3, 4);
-      drawSteam(ctx, -12, 8, time);
-    } else if (food === 'burger') {
+    } else if (id === 'burger') {
       ctx.fillStyle = '#E8922A'; ctx.fillRect(-40, 20, 80, 16);
       ctx.fillStyle = '#3D1A00'; ctx.fillRect(-37, 8, 74, 12);
       ctx.fillStyle = '#FFD700'; ctx.fillRect(-40, 0, 80, 8);
       ctx.fillStyle = '#3D8A3D'; for (let i = -42; i <= 42; i += 8) ctx.fillRect(i, -8 + ((i / 8) % 2), 8, 8);
       ctx.fillStyle = '#E8922A'; ctx.beginPath(); ctx.ellipse(0, -16, 40, 16, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#FFF'; [-20, -8, 2, 12, 22].forEach((sx) => { ctx.fillRect(sx, -20, 4, 2); });
-    } else if (food === 'samosa') {
+    } else if (id === 'samosa') {
       ctx.fillStyle = '#C4935A'; ctx.beginPath(); ctx.moveTo(-34, 30); ctx.lineTo(34, 30); ctx.lineTo(0, -30); ctx.closePath(); ctx.fill();
-      ctx.fillStyle = '#B08040'; for (let y = 24; y > -22; y -= 8) ctx.fillRect(-26 + ((y / 8) % 2) * 4, y, 52, 2);
-      ctx.fillStyle = '#8B6230'; ctx.fillRect(-2, -18, 4, 40);
-      drawSteam(ctx, -6, -24, time);
-    } else if (food === 'chai') {
+      ctx.fillStyle = '#B08040'; for (let yy = 24; yy > -22; yy -= 8) ctx.fillRect(-26 + ((yy / 8) % 2) * 4, yy, 52, 2);
+    } else if (id === 'chai') {
       ctx.fillStyle = '#FFFFF0'; ctx.fillRect(-22, -8, 44, 50);
       ctx.fillStyle = '#8B4513'; ctx.fillRect(-18, -4, 36, 34);
-      ctx.fillStyle = '#DDDDCC'; ctx.fillRect(22, 8, 8, 20);
       ctx.fillStyle = '#EEEEEE'; ctx.beginPath(); ctx.ellipse(0, 42, 32, 6, 0, 0, Math.PI * 2); ctx.fill();
-      drawSteam(ctx, -12, -10, time);
-    } else if (food === 'coffee') {
+    } else if (id === 'coffee') {
       ctx.strokeStyle = '#AAAAAA'; ctx.lineWidth = 2; ctx.strokeRect(-20, -24, 40, 70);
       ctx.fillStyle = '#3D1A00'; ctx.fillRect(-18, 18, 36, 26);
       ctx.fillStyle = '#C4935A'; ctx.fillRect(-18, 3, 36, 15);
       ctx.fillStyle = '#FFFDE0'; ctx.fillRect(-18, -12, 36, 15);
-      ctx.fillStyle = '#FFF'; ctx.fillRect(-14, -8, 6, 4); ctx.fillRect(2, -6, 6, 4);
-      ctx.fillStyle = '#FFF'; ctx.fillRect(-16, -20, 2, 56);
-      ctx.fillStyle = '#CC2200'; for (let y = -42; y < -12; y += 6) ctx.fillRect(10, y, 4, 3);
-      ctx.fillStyle = '#FFFFFF'; for (let y = -39; y < -9; y += 6) ctx.fillRect(10, y + 3, 4, 3);
-    } else if (food === 'pudding') {
-      const pulse = 1 + Math.sin(time / 260) * 0.02;
+    } else if (id === 'pudding') {
+      const pulse = 1 + Math.sin(time / 280) * 0.03;
       ctx.scale(pulse, pulse);
-      ctx.fillStyle = 'rgba(255,215,0,0.2)'; ctx.beginPath(); ctx.arc(0, 0, 62, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = 'rgba(255,215,0,0.2)'; ctx.beginPath(); ctx.arc(0, 0, 64, 0, Math.PI * 2); ctx.fill();
       ctx.strokeStyle = '#FFD700'; ctx.lineWidth = 2;
       for (let i = 0; i < 8; i += 1) {
         const a = (Math.PI * 2 * i) / 8;
         ctx.beginPath(); ctx.moveTo(Math.cos(a) * 34, Math.sin(a) * 34); ctx.lineTo(Math.cos(a) * 56, Math.sin(a) * 56); ctx.stroke();
       }
       ctx.fillStyle = '#FFD700'; ctx.beginPath(); ctx.ellipse(0, 8, 36, 28, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#FFC942'; ctx.beginPath(); ctx.ellipse(0, -8, 30, 18, 0, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = '#C47820'; ctx.fillRect(-24, -6, 4, 20); ctx.fillRect(-8, -12, 4, 24); ctx.fillRect(8, -8, 4, 20); ctx.fillRect(20, -6, 4, 18);
-      ctx.fillStyle = '#FFD700'; ctx.fillRect(-10, -34, 20, 8);
-      ctx.fillStyle = '#CC2200'; ctx.fillRect(-7, -36, 4, 4);
-      ctx.fillStyle = '#2255CC'; ctx.fillRect(3, -36, 4, 4);
     }
     ctx.restore();
   };
@@ -638,249 +582,213 @@ function SnackGame({ onFinish }) {
 
     const beginRound = (idx, now) => {
       setDialogue(rounds[idx].line, now);
-      labelRef.current = { full: '', shown: '', nextAt: now };
-      selectedRef.current = -1;
-      stampRef.current = { side: -1, start: 0 };
+      setHoverType('', now);
+      selectedRef.current = { side: -1, at: 0 };
     };
 
-    const handleMove = (event) => {
+    const onMove = (event) => {
       const rect = canvas.getBoundingClientRect();
       const x = event.clientX - rect.left;
       const y = event.clientY - rect.top;
-      const hit = boardRectsRef.current.findIndex(r => x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h);
+      const hit = boardsRef.current.findIndex(r => x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h);
       hoverRef.current = hit;
       canvas.style.cursor = hit >= 0 ? 'pointer' : 'default';
       if (hit >= 0) {
         const item = hit === 0 ? rounds[roundRef.current].left.name : rounds[roundRef.current].right.name;
-        const txt = `EXHIBIT ${roundRef.current + 1}: ${item.toUpperCase()}`;
-        if (labelRef.current.full !== txt) labelRef.current = { full: txt, shown: '', nextAt: performance.now() };
+        const text = `EXHIBIT ${roundRef.current + 1}: ${item.toUpperCase()}`;
+        if (text !== typeRef.current.full) setHoverType(text, performance.now());
       }
     };
 
-    const handleClick = (event) => {
+    const onDown = (event) => {
       const now = performance.now();
-      if (transitionRef.current.mode !== 'idle' || selectedRef.current !== -1) return;
+      if (transitionRef.current.mode !== 'idle' || selectedRef.current.side !== -1) return;
       const rect = canvas.getBoundingClientRect();
       const x = event.clientX - rect.left;
       const y = event.clientY - rect.top;
-      const side = boardRectsRef.current.findIndex(r => x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h);
+      const side = boardsRef.current.findIndex(r => x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h);
       if (side < 0) return;
-      const round = rounds[roundRef.current];
-      const picked = side === 0 ? round.left : round.right;
-      selectedRef.current = side;
-      flashUntilRef.current = now + 80;
-      stampRef.current = { side, start: now };
-      playThud();
-      setDialogue(`GUILTY. ${picked.name.toUpperCase()} ENTERS THE RECORD.`, now);
+      const currentRound = rounds[roundRef.current];
+      const picked = side === 0 ? currentRound.left : currentRound.right;
+      selectedRef.current = { side, at: now };
+      setDialogue(`GUILTY STAMPED. ${picked.name.toUpperCase()} ENTERS THE RECORD.`, now);
 
       const nextRound = roundRef.current + 1;
       if (nextRound >= rounds.length) {
-        window.setTimeout(() => onFinish({ snackChoice: picked.name }), 980);
-        return;
+        window.setTimeout(() => onFinish({ snackChoice: picked.name }), 900);
+      } else {
+        window.setTimeout(() => {
+          transitionRef.current = { mode: 'exit', start: performance.now(), nextRound };
+        }, 850);
       }
-      window.setTimeout(() => {
-        transitionRef.current = { mode: 'exit', start: performance.now(), nextRound };
-      }, 900);
     };
 
     resize();
     beginRound(0, performance.now());
+
     window.addEventListener('resize', resize);
-    canvas.addEventListener('pointermove', handleMove);
-    canvas.addEventListener('pointerdown', handleClick);
+    canvas.addEventListener('pointermove', onMove);
+    canvas.addEventListener('pointerdown', onDown);
 
     let frameId = 0;
     const render = (time) => {
       frameId = requestAnimationFrame(render);
       const w = canvas.width;
       const h = canvas.height;
+      const fs = Math.max(8, Math.floor(Math.min(w, h) * 0.011));
       ctx.clearRect(0, 0, w, h);
 
-      // Room layers
-      ctx.fillStyle = '#F5E8C8'; ctx.fillRect(0, 0, w, h * 0.5);
-      ctx.fillStyle = '#E8D5A8'; ctx.fillRect(0, 0, w, 20);
-      ctx.fillStyle = '#888'; ctx.fillRect(w * 0.5 - 1, 20, 2, 15);
-      ctx.fillStyle = '#FFFDE0'; ctx.beginPath(); ctx.ellipse(w * 0.5, 42, 10, 7, 0, 0, Math.PI * 2); ctx.fill();
-      const lg = ctx.createRadialGradient(w * 0.5, 60, 10, w * 0.5, 120, 140);
-      lg.addColorStop(0, 'rgba(255,220,100,0.2)'); lg.addColorStop(1, 'rgba(255,220,100,0)');
-      ctx.fillStyle = lg; ctx.fillRect(w * 0.5 - 160, 40, 320, 180);
-
-      ctx.fillStyle = '#F0EDE0'; ctx.fillRect(w * 0.04, 36, w * 0.18, h * 0.44);
-      ctx.strokeStyle = '#8B6230'; ctx.lineWidth = 2; ctx.strokeRect(w * 0.04, 36, w * 0.18, h * 0.44);
-      for (let gx = w * 0.04 + 10; gx < w * 0.22; gx += 20) ctx.fillRect(gx, 36, 2, h * 0.44);
-      for (let gy = 50; gy < h * 0.48; gy += 24) ctx.fillRect(w * 0.04, gy, w * 0.18, 2);
-
-      ctx.fillStyle = '#8B6230'; ctx.fillRect(w * 0.79, h * 0.38, 90, 18); ctx.fillRect(w * 0.8, h * 0.4, 8, 24); ctx.fillRect(w * 0.86, h * 0.4, 8, 24);
-      ctx.fillStyle = '#333'; ctx.fillRect(w * 0.795, h * 0.30, 68, 46);
-      ctx.fillStyle = '#444'; ctx.fillRect(w * 0.8, h * 0.305, 58, 36);
-      ctx.fillStyle = '#5A4A8A'; ctx.fillRect(w * 0.805, h * 0.31, 48, 26);
-
-      const tatamiY = h * 0.5;
-      for (let y = tatamiY; y < h; y += 40) {
-        for (let x = 0; x < w; x += 80) {
-          ctx.fillStyle = ((x / 80 + y / 40) % 2 === 0) ? '#C8B878' : '#BFAF70';
-          ctx.fillRect(x, y, 80, 40);
-          ctx.strokeStyle = '#A89858'; ctx.lineWidth = 1; ctx.strokeRect(x, y, 80, 40);
-          ctx.fillStyle = 'rgba(184,168,104,0.3)';
-          for (let ly = y + 4; ly < y + 38; ly += 4) ctx.fillRect(x + 2, ly, 76, 1);
+      // Background room
+      ctx.fillStyle = '#F5E8C8'; ctx.fillRect(0, 0, w, h * 0.52);
+      ctx.fillStyle = '#E8D5A8'; ctx.fillRect(0, 0, w, 26);
+      ctx.fillStyle = '#8B6230'; ctx.fillRect(0, h * 0.52 - 6, w, 6);
+      const floorCellW = Math.max(72, Math.floor(w * 0.06));
+      const floorCellH = Math.max(34, Math.floor(h * 0.045));
+      for (let y = Math.floor(h * 0.52); y < h; y += floorCellH) {
+        for (let x = 0; x < w; x += floorCellW) {
+          ctx.fillStyle = ((x / floorCellW + y / floorCellH) % 2 === 0) ? '#C8B878' : '#C0B070';
+          ctx.fillRect(x, y, floorCellW, floorCellH);
+          ctx.strokeStyle = '#A89858'; ctx.lineWidth = 1; ctx.strokeRect(x, y, floorCellW, floorCellH);
         }
       }
-      ctx.fillStyle = '#8B6230'; ctx.fillRect(0, tatamiY - 6, w, 6);
+
+      // Decorative walls
+      ctx.fillStyle = '#F0EDE0';
+      ctx.fillRect(w * 0.03, 20, w * 0.18, h * 0.47);
+      ctx.strokeStyle = '#8B6230'; ctx.lineWidth = 2; ctx.strokeRect(w * 0.03, 20, w * 0.18, h * 0.47);
+      ctx.fillStyle = '#333'; ctx.fillRect(w * 0.83, h * 0.3, w * 0.1, h * 0.09);
+      ctx.fillStyle = '#5A4A8A'; ctx.fillRect(w * 0.835, h * 0.31, w * 0.09, h * 0.07);
+      ctx.fillStyle = '#8B6230'; ctx.fillRect(w * 0.82, h * 0.39, w * 0.12, 16);
 
       // Banner
       ctx.save();
-      ctx.translate(w * 0.5, h * 0.16);
+      ctx.translate(w * 0.5, h * 0.15);
       ctx.rotate(-2 * Math.PI / 180);
-      ctx.fillStyle = '#FFFDE0'; ctx.fillRect(-170, -20, 340, 40);
-      ctx.fillStyle = '#CC2200'; ctx.beginPath(); ctx.arc(-170, -20, 4, 0, Math.PI * 2); ctx.fill(); ctx.beginPath(); ctx.arc(170, -20, 4, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#CC2200'; ctx.font = '6px "Press Start 2P"'; ctx.fillText('COURT OF JUSTICE (shin-chan presiding)', -148, 4);
+      ctx.fillStyle = '#FFFDE0'; ctx.fillRect(-w * 0.12, -18, w * 0.24, 36);
+      ctx.fillStyle = '#CC2200'; ctx.beginPath(); ctx.arc(-w * 0.12, -18, 4, 0, Math.PI * 2); ctx.fill(); ctx.beginPath(); ctx.arc(w * 0.12, -18, 4, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#CC2200'; ctx.font = `${Math.max(6, fs - 3)}px "Press Start 2P"`; ctx.fillText('COURT OF JUSTICE (shin-chan presiding)', -w * 0.1, 4);
       ctx.restore();
 
-      // Judge desk + shin
-      const deskX = w * 0.5 - 60;
-      const deskY = h * 0.44;
-      ctx.fillStyle = '#8B6230'; ctx.fillRect(deskX, deskY, 120, 20);
-      ctx.fillStyle = '#7A5220'; ctx.fillRect(deskX + 8, deskY + 6, 104, 2);
-      ctx.fillStyle = '#CC2200'; ctx.fillRect(deskX + 16, deskY + 5, 8, 3);
-      ctx.fillStyle = '#FFF'; ctx.fillRect(deskX + 34, deskY + 7, 10, 7);
-      ctx.fillStyle = '#FFD700'; ctx.fillRect(deskX + 58, deskY + 4, 10, 12);
-      ctx.fillStyle = '#8B4513'; ctx.fillRect(deskX + 58, deskY + 4, 10, 3);
+      // Desk and shin
+      const deskW = Math.max(180, w * 0.16);
+      const deskH = Math.max(24, h * 0.03);
+      const deskX = w * 0.5 - deskW / 2;
+      const deskY = h * 0.45;
+      ctx.fillStyle = '#8B6230'; ctx.fillRect(deskX, deskY, deskW, deskH);
+      ctx.fillStyle = '#7A5220'; ctx.fillRect(deskX + 10, deskY + 8, deskW - 20, 2);
+      ctx.fillStyle = '#FFD700'; ctx.fillRect(deskX + deskW * 0.52, deskY + 6, 12, 14);
 
-      const slam = Math.floor(time / 2500) % 2 === 1 && (time % 2500) < 180;
-      const slamOffset = slam ? 4 : 0;
-      if (slam) ctx.save();
-      if (slam) ctx.translate((Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2);
-      ctx.fillStyle = '#ffebc8'; ctx.fillRect(w * 0.49, h * 0.34, 20, 20);
-      ctx.fillStyle = '#111'; ctx.fillRect(w * 0.495, h * 0.345, 4, 4); ctx.fillRect(w * 0.505, h * 0.345, 4, 4);
-      ctx.fillStyle = '#c22'; ctx.fillRect(w * 0.498, h * 0.357, 10, 3);
-      ctx.fillStyle = '#f4cf6b'; ctx.fillRect(w * 0.486, h * 0.36, 28, 16);
-      ctx.fillStyle = '#fff'; ctx.fillRect(w * 0.49, h * 0.376, 4, 15); ctx.fillRect(w * 0.506, h * 0.376, 4, 15);
-      ctx.fillStyle = '#000'; ctx.fillRect(w * 0.492, h * 0.332, 16, 4); ctx.fillRect(w * 0.499, h * 0.328, 2, 4);
-      ctx.fillStyle = '#8B4513'; ctx.fillRect(w * 0.507, h * 0.323 + slamOffset, 2, 20);
-      ctx.fillStyle = '#CC2200'; ctx.fillRect(w * 0.505, h * 0.318 + slamOffset, 6, 6);
-      if (slam) ctx.restore();
+      const slam = Math.floor(time / 2200) % 2 === 1 && (time % 2200) < 160;
+      const shakeX = slam ? (Math.random() - 0.5) * 2 : 0;
+      const shakeY = slam ? (Math.random() - 0.5) * 2 : 0;
+      const shinSize = Math.max(72, h * 0.12);
+      if (SPRITEMAP.shin_idle1 && SPRITEMAP.shin_idle1.complete) {
+        ctx.drawImage(SPRITEMAP.shin_idle1, 0, 0, 16, 16, w * 0.5 - shinSize / 2 + shakeX, h * 0.34 + shakeY, shinSize, shinSize);
+      } else {
+        ctx.fillStyle = '#ffebc8'; ctx.fillRect(w * 0.5 - 18 + shakeX, h * 0.36 + shakeY, 36, 36);
+      }
+      ctx.fillStyle = '#000'; ctx.fillRect(w * 0.5 - 16 + shakeX, h * 0.34 + shakeY, 32, 8);
+      ctx.fillStyle = '#8B4513'; ctx.fillRect(w * 0.5 + 20 + shakeX, h * 0.34 + (slam ? 8 : 0) + shakeY, 3, 38);
+      ctx.fillStyle = '#CC2200'; ctx.fillRect(w * 0.5 + 18 + shakeX, h * 0.33 + (slam ? 8 : 0) + shakeY, 8, 8);
 
-      // Transition math
-      const tr = transitionRef.current;
+      // Transition and board positioning
       let p = 0;
-      if (tr.mode !== 'idle') {
-        p = Math.min(1, (time - tr.start) / 300);
-        if (p >= 1 && tr.mode === 'exit') {
-          roundRef.current = tr.nextRound;
+      if (transitionRef.current.mode !== 'idle') {
+        p = Math.min(1, (time - transitionRef.current.start) / 320);
+        if (p >= 1 && transitionRef.current.mode === 'exit') {
+          roundRef.current = transitionRef.current.nextRound;
           beginRound(roundRef.current, time);
-          transitionRef.current = { mode: 'enter', start: time, nextRound: tr.nextRound };
-        } else if (p >= 1 && tr.mode === 'enter') {
+          transitionRef.current = { mode: 'enter', start: time, nextRound: roundRef.current };
+        } else if (p >= 1 && transitionRef.current.mode === 'enter') {
           transitionRef.current = { mode: 'idle', start: 0, nextRound: roundRef.current };
         }
       }
 
-      const boardW = Math.min(220, w * 0.24);
-      const boardH = Math.min(180, h * 0.30);
-      const baseY = h * 0.42;
-      const leftBaseX = w * 0.25;
-      const rightBaseX = w * 0.75;
-      let leftX = leftBaseX;
-      let rightX = rightBaseX;
-      if (tr.mode === 'exit') {
-        leftX = leftBaseX - p * (w * 0.5);
-        rightX = rightBaseX + p * (w * 0.5);
-      } else if (tr.mode === 'enter') {
-        leftX = leftBaseX - (1 - p) * (w * 0.5);
-        rightX = rightBaseX + (1 - p) * (w * 0.5);
-      }
+      const boardW = Math.max(320, w * 0.24);
+      const boardH = Math.max(260, h * 0.34);
+      const baseY = h * 0.5;
+      const leftBaseX = w * 0.26;
+      const rightBaseX = w * 0.74;
+      const leftX = transitionRef.current.mode === 'exit' ? leftBaseX - p * w * 0.55 : transitionRef.current.mode === 'enter' ? leftBaseX - (1 - p) * w * 0.55 : leftBaseX;
+      const rightX = transitionRef.current.mode === 'exit' ? rightBaseX + p * w * 0.55 : transitionRef.current.mode === 'enter' ? rightBaseX + (1 - p) * w * 0.55 : rightBaseX;
+      const currentRound = rounds[roundRef.current];
 
-      const round = rounds[roundRef.current];
       const drawBoard = (cx, side, item) => {
         const hover = hoverRef.current === side;
-        const by = baseY - boardH / 2 + (hover ? -2 : 0);
+        const by = baseY - boardH / 2 + (hover ? -5 : 0);
         const bx = cx - boardW / 2;
-        boardRectsRef.current[side] = { x: bx, y: by, w: boardW, h: boardH };
-
-        ctx.strokeStyle = '#8B6230'; ctx.lineWidth = 3;
-        ctx.beginPath(); ctx.moveTo(cx - boardW * 0.35, by + boardH + 26); ctx.lineTo(cx - boardW * 0.18, by + boardH); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(cx + boardW * 0.35, by + boardH + 26); ctx.lineTo(cx + boardW * 0.18, by + boardH); ctx.stroke();
-
+        boardsRef.current[side] = { x: bx, y: by, w: boardW, h: boardH };
+        ctx.strokeStyle = '#8B6230'; ctx.lineWidth = 4;
+        ctx.beginPath(); ctx.moveTo(cx - boardW * 0.34, by + boardH + 32); ctx.lineTo(cx - boardW * 0.16, by + boardH); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(cx + boardW * 0.34, by + boardH + 32); ctx.lineTo(cx + boardW * 0.16, by + boardH); ctx.stroke();
         ctx.fillStyle = '#FFFDE0'; ctx.fillRect(bx, by, boardW, boardH);
-        ctx.strokeStyle = hover ? '#FFD700' : '#333'; ctx.lineWidth = 3; ctx.strokeRect(bx, by, boardW, boardH);
-        ctx.save();
-        ctx.translate(bx + 12, by + 14);
-        ctx.rotate(3 * Math.PI / 180);
-        ctx.fillStyle = '#CC2200'; ctx.fillRect(0, 0, 84, 18);
-        ctx.fillStyle = '#FFFDE0'; ctx.font = '6px "Press Start 2P"'; ctx.fillText(`EXHIBIT ${roundRef.current + 1 + side}`, 5, 12);
-        ctx.restore();
-
+        ctx.strokeStyle = hover ? '#FFD700' : '#333'; ctx.lineWidth = 4; ctx.strokeRect(bx, by, boardW, boardH);
+        ctx.fillStyle = '#CC2200'; ctx.fillRect(bx + 16, by + 14, 104, 22);
+        ctx.fillStyle = '#FFFDE0'; ctx.font = `${Math.max(6, fs - 3)}px "Press Start 2P"`; ctx.fillText(`EXHIBIT ${roundRef.current + 1 + side}`, bx + 22, by + 29);
         if (hover) {
           ctx.fillStyle = 'rgba(255,255,200,0.15)';
-          ctx.beginPath(); ctx.moveTo(cx, 28); ctx.lineTo(cx - boardW * 0.34, by + boardH); ctx.lineTo(cx + boardW * 0.34, by + boardH); ctx.closePath();
-          ctx.fill();
+          ctx.beginPath(); ctx.moveTo(cx, 30); ctx.lineTo(cx - boardW * 0.32, by + boardH); ctx.lineTo(cx + boardW * 0.32, by + boardH); ctx.closePath(); ctx.fill();
         }
-        drawFood(ctx, item.id, cx, by + boardH * 0.56, time);
-
-        if (selectedRef.current === side) {
-          const age = Math.min(1, (time - stampRef.current.start) / 150);
+        const foodScale = Math.max(1.6, Math.min(boardW / 180, boardH / 150));
+        drawFood(ctx, item.id, cx, by + boardH * 0.57, foodScale, time);
+        if (selectedRef.current.side === side) {
+          const age = Math.min(1, (time - selectedRef.current.at) / 160);
           const scale = 2 - age;
           ctx.save();
-          ctx.translate(cx, by + boardH * 0.52);
+          ctx.translate(cx, by + boardH * 0.56);
           ctx.rotate(-10 * Math.PI / 180);
           ctx.scale(scale, scale);
-          ctx.fillStyle = 'rgba(204,34,0,0.88)'; ctx.fillRect(-40, -14, 80, 28);
-          ctx.strokeStyle = '#8B0000'; ctx.strokeRect(-40, -14, 80, 28);
-          ctx.fillStyle = '#FFF'; ctx.font = '9px "Press Start 2P"'; ctx.fillText('GUILTY', -28, 6);
+          ctx.fillStyle = 'rgba(204,34,0,0.88)'; ctx.fillRect(-64, -20, 128, 40);
+          ctx.strokeStyle = '#8B0000'; ctx.strokeRect(-64, -20, 128, 40);
+          ctx.fillStyle = '#FFF'; ctx.font = `${Math.max(10, fs + 2)}px "Press Start 2P"`; ctx.fillText('GUILTY', -46, 8);
           ctx.restore();
-        }
-
-        if (flashUntilRef.current > time && selectedRef.current === side) {
-          ctx.fillStyle = 'rgba(255,255,255,0.45)';
-          ctx.fillRect(bx, by, boardW, boardH);
         }
       };
 
-      drawBoard(leftX, 0, round.left);
-      drawBoard(rightX, 1, round.right);
+      drawBoard(leftX, 0, currentRound.left);
+      drawBoard(rightX, 1, currentRound.right);
 
-      // Round badge
-      ctx.fillStyle = 'rgba(20,16,8,0.9)'; ctx.fillRect(w - 170, 24, 146, 34);
-      ctx.strokeStyle = '#FFD700'; ctx.strokeRect(w - 170, 24, 146, 34);
-      ctx.fillStyle = '#FFD700'; ctx.font = '8px "Press Start 2P"'; ctx.fillText(`ROUND ${roundRef.current + 1} / ${rounds.length}`, w - 160, 45);
+      // Top badge
+      ctx.fillStyle = 'rgba(20,16,8,0.92)'; ctx.fillRect(w - 188, 12, 176, 40);
+      ctx.strokeStyle = '#FFD700'; ctx.strokeRect(w - 188, 12, 176, 40);
+      ctx.fillStyle = '#FFD700'; ctx.font = `${Math.max(9, fs)}px "Press Start 2P"`;
+      ctx.fillText(`ROUND ${roundRef.current + 1}/${rounds.length}`, w - 174, 36);
 
-      // Hover label
-      if (hoverRef.current >= 0 && labelRef.current.full) {
-        if (time >= labelRef.current.nextAt && labelRef.current.shown.length < labelRef.current.full.length) {
-          labelRef.current.shown = labelRef.current.full.slice(0, labelRef.current.shown.length + 1);
-          labelRef.current.nextAt = time + 30;
+      // Typewriter hover line
+      if (typeRef.current.full) {
+        if (time >= typeRef.current.at && typeRef.current.shown.length < typeRef.current.full.length) {
+          typeRef.current.shown = typeRef.current.full.slice(0, typeRef.current.shown.length + 1);
+          typeRef.current.at = time + 24;
         }
-        ctx.fillStyle = '#FFD700'; ctx.font = '7px "Press Start 2P"';
-        ctx.fillText(labelRef.current.shown, w * 0.33, h * 0.67);
+        ctx.fillStyle = '#FFD700'; ctx.font = `${Math.max(8, fs - 1)}px "Press Start 2P"`;
+        ctx.fillText(typeRef.current.shown, w * 0.28, h * 0.7);
       }
 
       // Dialogue typing
-      if (time >= dialogueRef.current.nextAt && dialogueRef.current.shown.length < dialogueRef.current.full.length) {
+      if (time >= dialogueRef.current.at && dialogueRef.current.shown.length < dialogueRef.current.full.length) {
         dialogueRef.current.shown = dialogueRef.current.full.slice(0, dialogueRef.current.shown.length + 1);
-        dialogueRef.current.nextAt = time + 16;
+        dialogueRef.current.at = time + 14;
       }
-      dialogueRef.current.done = dialogueRef.current.shown.length >= dialogueRef.current.full.length;
-
       const boxX = 16;
-      const boxY = h - 100;
+      const boxY = h - 108;
       const boxW = w - 32;
-      const boxH = 84;
+      const boxH = 92;
       ctx.fillStyle = 'rgba(10,10,30,0.93)'; ctx.fillRect(boxX, boxY, boxW, boxH);
       ctx.strokeStyle = '#FFF'; ctx.lineWidth = 2; ctx.strokeRect(boxX, boxY, boxW, boxH);
       ctx.strokeStyle = '#333355'; ctx.lineWidth = 1; ctx.strokeRect(boxX + 4, boxY + 4, boxW - 8, boxH - 8);
-      ctx.fillStyle = '#ffebc8'; ctx.fillRect(boxX + 12, boxY + 20, 16, 16);
-      ctx.fillStyle = '#111'; ctx.fillRect(boxX + 15, boxY + 24, 3, 3); ctx.fillRect(boxX + 22, boxY + 24, 3, 3);
-      ctx.fillStyle = '#c22'; ctx.fillRect(boxX + 16, boxY + 30, 8, 2);
-      ctx.fillStyle = '#FFD700'; ctx.font = '7px "Press Start 2P"'; ctx.fillText('Shin-chan:', boxX + 34, boxY + 30);
-      ctx.fillStyle = '#FFF'; ctx.font = '7px "Press Start 2P"'; wrapCanvasText(ctx, dialogueRef.current.shown, boxX + 80, boxY + 28, boxW - 96, 12);
-      if (dialogueRef.current.done && Math.floor(time / 400) % 2 === 0) ctx.fillText('v', boxX + boxW - 18, boxY + boxH - 10);
+      ctx.fillStyle = '#ffebc8'; ctx.fillRect(boxX + 12, boxY + 18, 16, 16);
+      ctx.fillStyle = '#111'; ctx.fillRect(boxX + 15, boxY + 22, 3, 3); ctx.fillRect(boxX + 22, boxY + 22, 3, 3);
+      ctx.fillStyle = '#c22'; ctx.fillRect(boxX + 16, boxY + 29, 8, 2);
+      ctx.fillStyle = '#FFD700'; ctx.font = `${Math.max(7, fs - 2)}px "Press Start 2P"`; ctx.fillText('Shin-chan:', boxX + 34, boxY + 30);
+      ctx.fillStyle = '#FFF'; wrapCanvasText(ctx, dialogueRef.current.shown, boxX + 88, boxY + 29, boxW - 108, Math.max(12, fs + 3));
     };
 
     frameId = requestAnimationFrame(render);
     return () => {
       cancelAnimationFrame(frameId);
       window.removeEventListener('resize', resize);
-      canvas.removeEventListener('pointermove', handleMove);
-      canvas.removeEventListener('pointerdown', handleClick);
+      canvas.removeEventListener('pointermove', onMove);
+      canvas.removeEventListener('pointerdown', onDown);
       canvas.style.cursor = 'default';
     };
   }, [onFinish]);
@@ -1143,15 +1051,27 @@ function KindergartenGame({ onFinish }) {
   const playScratch = () => {
     const audio = ensureAudio();
     if (!audio) return;
-    const buffer = audio.createBuffer(1, Math.floor(audio.sampleRate * 0.03), audio.sampleRate);
-    const data = buffer.getChannelData(0);
-    for (let i = 0; i < data.length; i += 1) data[i] = (Math.random() * 2 - 1) * (1 - i / data.length);
-    const src = audio.createBufferSource();
+    const now = audio.currentTime;
+    const osc = audio.createOscillator();
+    const snap = audio.createOscillator();
     const gain = audio.createGain();
-    gain.gain.value = 0.03;
-    src.buffer = buffer;
-    src.connect(gain).connect(audio.destination);
-    src.start();
+    osc.type = 'square';
+    snap.type = 'triangle';
+    const base = 760 + Math.random() * 240;
+    osc.frequency.setValueAtTime(base, now);
+    osc.frequency.exponentialRampToValueAtTime(base * 0.72, now + 0.03);
+    snap.frequency.setValueAtTime(base * 2.2, now);
+    snap.frequency.exponentialRampToValueAtTime(base * 1.4, now + 0.015);
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.linearRampToValueAtTime(0.05, now + 0.004);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.045);
+    osc.connect(gain);
+    snap.connect(gain);
+    gain.connect(audio.destination);
+    osc.start(now);
+    snap.start(now);
+    osc.stop(now + 0.05);
+    snap.stop(now + 0.022);
   };
 
   const setDialogue = (text, now) => {
@@ -1427,249 +1347,295 @@ function KindergartenGame({ onFinish }) {
 
 function TheaterGame({ onFinish }) {
   const canvasRef = useRef(null);
-  const rafRef = useRef(0);
-  const spawnRef = useRef(0);
-  const timerRef = useRef(0);
-  const finishedRef = useRef(false);
-  const lastTimeRef = useRef(performance.now());
+  const runningRef = useRef(true);
   const enemiesRef = useRef([]);
   const bulletsRef = useRef([]);
   const particlesRef = useRef([]);
-  const enemyIdRef = useRef(0);
-  const scoreRef = useRef(0);
-  const hitsRef = useRef(0);
-  const timeLeftRef = useRef(28);
-  const phaseRef = useRef(1);
-  const actionRef = useRef("YOU'RE IN THE FRONT ROW. PRESS SPACE. SHOOT.");
-  const [flash, setFlash] = useState(false);
+  const keysRef = useRef({});
+  const playerRef = useRef({ x: 0.5, cooldown: 0, lives: 3, combo: 0 });
+  const stateRef = useRef({ score: 0, hits: 0, miss: 0, timeLeft: 35, wave: 1, message: 'Action Kamen defense live. Move, aim, and shoot.' });
+  const lastRef = useRef(performance.now());
+  const spawnTimerRef = useRef(0);
+  const timerRef = useRef(0);
 
-  const shoot = useCallback(() => {
-    if (finishedRef.current) return;
-    bulletsRef.current.push({ x: 0.78, y: 0.82, vy: -0.045 });
-  }, []);
-
-  useEffect(() => {
-    const onKeyDown = (event) => {
-      if (event.code === 'Space') {
-        event.preventDefault();
-        shoot();
-      }
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [shoot]);
+  const finish = useCallback(() => {
+    if (!runningRef.current) return;
+    runningRef.current = false;
+    clearInterval(spawnTimerRef.current);
+    clearInterval(timerRef.current);
+    const s = stateRef.current.score;
+    const lives = playerRef.current.lives;
+    const rank = s > 5000 && lives >= 2 ? 'high' : s > 2400 ? 'mid' : 'low';
+    onFinish({ rhythmScore: rank });
+  }, [onFinish]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d', { alpha: false });
+    if (!ctx) return;
 
-    const resize = () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; };
-    resize();
-    window.addEventListener('resize', resize);
+    const resize = () => {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+      ctx.imageSmoothingEnabled = false;
+    };
+
+    const onKeyDown = (event) => {
+      keysRef.current[event.code] = true;
+      if (event.code === 'Space') event.preventDefault();
+    };
+
+    const onKeyUp = (event) => {
+      keysRef.current[event.code] = false;
+    };
+
+    const onPointerMove = (event) => {
+      const rect = canvas.getBoundingClientRect();
+      const x = (event.clientX - rect.left) / rect.width;
+      playerRef.current.x = Math.max(0.08, Math.min(0.92, x));
+    };
+
+    const shoot = () => {
+      const p = playerRef.current;
+      if (p.cooldown > 0 || !runningRef.current) return;
+      p.cooldown = 0.1;
+      bulletsRef.current.push({ x: p.x, y: 0.82, vy: -1.1, w: 6, h: 18 });
+    };
+
+    const onPointerDown = () => shoot();
 
     const spawnEnemy = () => {
-      const lane = enemyIdRef.current % 4;
-      enemyIdRef.current += 1;
+      if (!runningRef.current) return;
+      const wave = stateRef.current.wave;
+      const typeRoll = Math.random();
+      const type = typeRoll < 0.15 ? 'tank' : typeRoll < 0.5 ? 'zigzag' : 'grunt';
+      const speed = type === 'tank' ? 0.12 + wave * 0.04 : type === 'zigzag' ? 0.2 + wave * 0.05 : 0.16 + wave * 0.05;
+      const hp = type === 'tank' ? 3 : 1;
       enemiesRef.current.push({
-        id: enemyIdRef.current,
-        x: 0.14 + lane * 0.15,
-        y: -0.12,
-        speed: 0.014 + Math.random() * 0.012 + phaseRef.current * 0.003,
-        frame: 0,
-        wobble: Math.random() * Math.PI * 2,
+        x: 0.1 + Math.random() * 0.8,
+        y: -0.08,
+        w: type === 'tank' ? 38 : 26,
+        h: type === 'tank' ? 34 : 24,
+        hp,
+        type,
+        speed,
+        phase: Math.random() * Math.PI * 2
       });
     };
 
-    const spawnLoop = () => {
-      clearInterval(spawnRef.current);
-      const rate = phaseRef.current === 1 ? 1050 : phaseRef.current === 2 ? 760 : 520;
-      spawnRef.current = window.setInterval(spawnEnemy, rate);
+    resize();
+    window.addEventListener('resize', resize);
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    canvas.addEventListener('pointermove', onPointerMove);
+    canvas.addEventListener('pointerdown', onPointerDown);
+
+    const spawnRate = () => {
+      clearInterval(spawnTimerRef.current);
+      const wave = stateRef.current.wave;
+      const ms = wave === 1 ? 780 : wave === 2 ? 560 : 420;
+      spawnTimerRef.current = window.setInterval(spawnEnemy, ms);
     };
 
-    const finish = () => {
-      if (finishedRef.current) return;
-      finishedRef.current = true;
-      clearInterval(spawnRef.current);
-      clearInterval(timerRef.current);
-      cancelAnimationFrame(rafRef.current);
-      onFinish({ rhythmScore: hitsRef.current > 18 ? 'high' : hitsRef.current > 10 ? 'mid' : 'low' });
-    };
+    spawnRate();
+    timerRef.current = window.setInterval(() => {
+      if (!runningRef.current) return;
+      stateRef.current.timeLeft -= 1;
+      if (stateRef.current.timeLeft === 24) { stateRef.current.wave = 2; stateRef.current.message = 'Wave 2: speed increased.'; spawnRate(); }
+      if (stateRef.current.timeLeft === 12) { stateRef.current.wave = 3; stateRef.current.message = 'Final wave: hold your line.'; spawnRate(); }
+      if (stateRef.current.timeLeft <= 0 || playerRef.current.lives <= 0) finish();
+    }, 1000);
 
-    const drawCurtains = (w, h) => {
-      const curtainW = w * 0.14;
-      const drawStrip = (x, reverse) => {
-        for (let i = 0; i < 18; i += 1) {
-          const shade = i % 3 === 0 ? '#8B0000' : i % 3 === 1 ? '#CC0000' : '#6B0000';
-          ctx.fillStyle = shade;
-          const stripW = curtainW / 18;
-          ctx.fillRect(x + i * stripW, 0, stripW, h * 0.88);
-        }
-        ctx.fillStyle = '#FFD700';
-        ctx.fillRect(x, 0, curtainW, 3);
-        ctx.fillStyle = '#7a5100';
-        for (let y = 8; y < h * 0.88; y += 20) {
-          ctx.fillRect(reverse ? x + curtainW - 6 : x + 6, y, 4, 16);
-        }
-      };
-      drawStrip(0, false);
-      drawStrip(w - curtainW, true);
-    };
-
-    const drawHiroshi = (w, h, time) => {
-      const bob = Math.round(Math.sin(time / 800));
-      const x = w * 0.5;
-      const y = h * 0.48 + bob;
-      ctx.fillStyle = '#666'; ctx.fillRect(x - 12, y - 20, 24, 28);
-      ctx.fillStyle = '#eee'; ctx.fillRect(x - 8, y - 38, 16, 18);
-      ctx.fillStyle = '#111'; ctx.fillRect(x - 7, y - 44, 14, 6);
-      ctx.fillStyle = '#ddd'; ctx.fillRect(x - 16, y + 4, 9, 22); ctx.fillRect(x + 7, y + 4, 9, 22);
-      ctx.fillStyle = '#888'; ctx.fillRect(x - 28, y - 10, 12, 4);
-      if (Math.floor(time / 1200) % 2 === 0) {
-        ctx.fillStyle = '#ddd'; ctx.fillRect(x + 13, y - 10, 10, 18);
-      }
-    };
-
-    const drawStage = (w, h, time) => {
-      ctx.fillStyle = '#0D0518'; ctx.fillRect(0, 0, w, h);
-      const floorTop = h * 0.22;
-      const stageTop = h * 0.74;
-      ctx.fillStyle = '#1A0A2E'; ctx.fillRect(0, floorTop, w, stageTop - floorTop);
-      drawCurtains(w, h);
-      ctx.fillStyle = '#F0F0F0'; ctx.fillRect(w * 0.27, h * 0.14, w * 0.46, h * 0.26);
-      ctx.strokeStyle = '#1f1f1f'; ctx.lineWidth = 4; ctx.strokeRect(w * 0.27, h * 0.14, w * 0.46, h * 0.26);
-      ctx.fillStyle = '#1a1a1a'; ctx.fillRect(w * 0.2, h * 0.1, w * 0.6, 28);
-      ctx.fillStyle = '#FFD700';
-      ctx.font = '18px "Press Start 2P"';
-      ctx.fillText('ACTION KAMEN LIVE', w * 0.31, h * 0.12);
-      for (let x = w * 0.22; x < w * 0.78; x += 12) {
-        ctx.fillStyle = Math.floor(time / 400) % 2 === Math.floor((x / 12) % 2) ? '#FFD700' : '#333';
-        ctx.fillRect(x, h * 0.095, 4, 4);
-      }
-      for (let x = 0; x < w; x += 16) {
-        ctx.fillStyle = (x / 16) % 2 === 0 ? '#8B6914' : '#7A5C10';
-        ctx.fillRect(x, stageTop, 16, h - stageTop);
-      }
-      ctx.fillStyle = '#FFD700'; ctx.fillRect(0, stageTop, w, 3);
-      for (let x = 0; x < w; x += 20) {
-        ctx.fillStyle = (x / 20) % 2 === 0 ? '#fff' : '#ffd44d';
-        ctx.fillRect(x, stageTop + 6, 4, 4);
-      }
-      ctx.fillStyle = 'rgba(255,255,255,0.08)';
-      ctx.fillRect(0, stageTop - 2, w, 8);
-      drawHiroshi(w, h, time);
-      // Shin-chan headset corner
-      ctx.fillStyle = '#ffebc8'; ctx.fillRect(w * 0.82, h * 0.76, 24, 24); ctx.fillStyle = '#111'; ctx.fillRect(w * 0.827, h * 0.765, 5, 5); ctx.fillRect(w * 0.842, h * 0.765, 5, 5); ctx.fillStyle = '#c22'; ctx.fillRect(w * 0.835, h * 0.812, 10, 3); ctx.fillStyle = '#666'; ctx.fillRect(w * 0.818, h * 0.772, 8, 4);
-      ctx.fillStyle = '#666'; ctx.fillRect(w * 0.814, h * 0.774, 4, 20); ctx.fillRect(w * 0.847, h * 0.774, 4, 20);
-      // HUD pills
-      const hud = [
-        ['HITS', hitsRef.current],
-        ['TIME', `${timeLeftRef.current}s`],
-        ['SCORE', scoreRef.current],
-      ];
-      hud.forEach(([label, value], index) => {
-        const x = 24;
-        const y = 24 + index * 34;
-        ctx.fillStyle = 'rgba(8,8,12,0.88)'; ctx.fillRect(x, y, 210, 26);
-        ctx.strokeStyle = '#fff'; ctx.strokeRect(x, y, 210, 26);
-        ctx.fillStyle = '#fff'; ctx.font = '12px "Press Start 2P"'; ctx.fillText(`${label}: ${value}`, x + 10, y + 17);
-      });
-      ctx.fillStyle = 'rgba(4, 5, 10, 0.9)';
-      ctx.fillRect(24, h - 94, w - 48, 64);
-      ctx.strokeStyle = '#FFD700'; ctx.strokeRect(24, h - 94, w - 48, 64);
-      ctx.fillStyle = '#fff'; ctx.font = '11px "Press Start 2P"';
-      wrapCanvasText(ctx, `Shin-chan: ${actionRef.current}`, 40, h - 66, w - 72, 16);
-      ctx.fillStyle = '#7fe1ff';
-      ctx.fillRect(w * 0.18, stageTop + 6, w * 0.64, 3);
-    };
-
-    const drawEnemy = (enemy, w, h) => {
-      const x = w * enemy.x;
-      const y = h * enemy.y;
+    const drawEnemy = (enemy, w, h, time) => {
+      const x = enemy.x * w;
+      const y = enemy.y * h;
       ctx.save();
       ctx.translate(x, y);
-      ctx.fillStyle = '#1A1A1A'; ctx.fillRect(-5, -5, 10, 10);
-      ctx.fillStyle = '#CC0000'; ctx.fillRect(-4, -4, 8, 4);
-      if (enemy.frame === 0) {
-        ctx.fillStyle = '#fff'; ctx.fillRect(-3, -1, 2, 2); ctx.fillRect(1, -1, 2, 2);
+      const blink = Math.floor(time / 180) % 2 === 0;
+      if (enemy.type === 'tank') {
+        ctx.fillStyle = '#1C1C1C'; ctx.fillRect(-19, -16, 38, 32);
+        ctx.fillStyle = '#CC0000'; ctx.fillRect(-16, -14, 32, 10);
+        ctx.fillStyle = blink ? '#FFF' : '#FFAAAA'; ctx.fillRect(-10, -2, 6, 4); ctx.fillRect(4, -2, 6, 4);
       } else {
-        ctx.fillStyle = '#fff'; ctx.fillRect(-2, -1, 2, 2); ctx.fillRect(2, -1, 2, 2);
+        ctx.fillStyle = '#111'; ctx.fillRect(-13, -12, 26, 24);
+        ctx.fillStyle = '#CC0000'; ctx.fillRect(-10, -10, 20, 8);
+        ctx.fillStyle = blink ? '#FFF' : '#FFB6B6'; ctx.fillRect(-7, -1, 4, 3); ctx.fillRect(3, -1, 4, 3);
       }
       ctx.restore();
     };
 
-    const drawBullet = (bullet, w, h) => {
-      ctx.fillStyle = '#9bf770';
-      ctx.fillRect(w * bullet.x - 2, h * bullet.y - 8, 4, 12);
+    const drawStage = (w, h, time) => {
+      const floorTop = h * 0.24;
+      const stageTop = h * 0.74;
+      ctx.fillStyle = '#090412'; ctx.fillRect(0, 0, w, h);
+      const bg = ctx.createLinearGradient(0, 0, 0, floorTop + 60);
+      bg.addColorStop(0, '#1c0d33');
+      bg.addColorStop(1, '#120826');
+      ctx.fillStyle = bg; ctx.fillRect(0, 0, w, floorTop + 60);
+
+      const curtainW = Math.max(140, w * 0.13);
+      for (let i = 0; i < 20; i += 1) {
+        const c = i % 3 === 0 ? '#7C0000' : i % 3 === 1 ? '#A80000' : '#5A0000';
+        ctx.fillStyle = c;
+        ctx.fillRect((curtainW / 20) * i, 0, curtainW / 20 + 1, h * 0.9);
+        ctx.fillRect(w - curtainW + (curtainW / 20) * i, 0, curtainW / 20 + 1, h * 0.9);
+      }
+
+      ctx.fillStyle = '#101020'; ctx.fillRect(0, floorTop, w, stageTop - floorTop);
+      for (let x = 0; x < w; x += 16) {
+        ctx.fillStyle = (x / 16) % 2 === 0 ? '#6F5516' : '#7E611B';
+        ctx.fillRect(x, stageTop, 16, h - stageTop);
+      }
+      ctx.fillStyle = '#FFD700'; ctx.fillRect(0, stageTop, w, 3);
+
+      ctx.fillStyle = '#1a1a1a'; ctx.fillRect(w * 0.22, h * 0.08, w * 0.56, 34);
+      ctx.fillStyle = '#FFD700'; ctx.font = `${Math.max(12, Math.floor(w * 0.013))}px "Press Start 2P"`;
+      ctx.fillText('ACTION KAMEN DEFENSE', w * 0.27, h * 0.105);
+      for (let x = w * 0.24; x < w * 0.76; x += 14) {
+        ctx.fillStyle = Math.floor(time / 220) % 2 === Math.floor((x / 14) % 2) ? '#FFD700' : '#333';
+        ctx.fillRect(x, h * 0.075, 5, 5);
+      }
     };
 
-    const render = (time) => {
-      if (finishedRef.current) return;
-      rafRef.current = requestAnimationFrame(render);
-      const dt = Math.min(50, time - lastTimeRef.current);
-      lastTimeRef.current = time;
+    const tick = (time) => {
+      if (!runningRef.current) return;
+      requestAnimationFrame(tick);
+      const dt = Math.min(0.04, (time - lastRef.current) / 1000);
+      lastRef.current = time;
       const w = canvas.width;
       const h = canvas.height;
-      if (flash) ctx.fillStyle = 'rgba(255,0,0,0.3)';
+
       drawStage(w, h, time);
 
-      enemiesRef.current = enemiesRef.current
-        .map(enemy => ({ ...enemy, y: enemy.y + enemy.speed * (dt / 16.67), frame: Math.floor(time / 220) % 2 }))
-        .filter(enemy => enemy.y < 0.76);
-      bulletsRef.current = bulletsRef.current
-        .map(bullet => ({ ...bullet, y: bullet.y + bullet.vy * (dt / 16.67) }))
-        .filter(bullet => bullet.y > 0.08);
+      const p = playerRef.current;
+      const s = stateRef.current;
 
-      bulletsRef.current.forEach(bullet => drawBullet(bullet, w, h));
-      enemiesRef.current.forEach(enemy => drawEnemy(enemy, w, h));
+      if (keysRef.current['ArrowLeft'] || keysRef.current['KeyA']) p.x -= dt * 0.6;
+      if (keysRef.current['ArrowRight'] || keysRef.current['KeyD']) p.x += dt * 0.6;
+      if (keysRef.current['Space']) {
+        if (p.cooldown <= 0) {
+          p.cooldown = 0.1;
+          bulletsRef.current.push({ x: p.x, y: 0.82, vy: -1.1, w: 6, h: 18 });
+        }
+      }
+      p.x = Math.max(0.08, Math.min(0.92, p.x));
+      p.cooldown = Math.max(0, p.cooldown - dt);
 
-      for (let b = bulletsRef.current.length - 1; b >= 0; b -= 1) {
-        const bullet = bulletsRef.current[b];
-        for (let e = enemiesRef.current.length - 1; e >= 0; e -= 1) {
-          const enemy = enemiesRef.current[e];
-          if (Math.abs(bullet.x - enemy.x) < 0.03 && Math.abs(bullet.y - enemy.y) < 0.05) {
-            enemiesRef.current.splice(e, 1);
-            bulletsRef.current.splice(b, 1);
-            hitsRef.current += 1;
-            scoreRef.current += 100 + phaseRef.current * 20;
-            particlesRef.current.push({ x: enemy.x, y: enemy.y, life: 18, dx: 0.01, dy: -0.01 });
-            actionRef.current = phaseRef.current === 1 ? 'GOOD. KEEP SHOOTING.' : phaseRef.current === 2 ? 'THE CROWD IS LOSING IT.' : 'FINAL PUSH. DO NOT MISS.';
+      enemiesRef.current.forEach(enemy => {
+        enemy.y += enemy.speed * dt;
+        if (enemy.type === 'zigzag') enemy.x += Math.sin(time / 200 + enemy.phase) * 0.0018;
+        enemy.x = Math.max(0.06, Math.min(0.94, enemy.x));
+      });
+      bulletsRef.current.forEach(b => { b.y += b.vy * dt; });
+
+      // Collisions
+      for (let i = bulletsRef.current.length - 1; i >= 0; i -= 1) {
+        const b = bulletsRef.current[i];
+        const bx = b.x * w;
+        const by = b.y * h;
+        let hit = false;
+        for (let j = enemiesRef.current.length - 1; j >= 0; j -= 1) {
+          const e = enemiesRef.current[j];
+          const ex = e.x * w;
+          const ey = e.y * h;
+          if (Math.abs(bx - ex) < e.w * 0.6 && Math.abs(by - ey) < e.h * 0.6) {
+            e.hp -= 1;
+            hit = true;
+            if (e.hp <= 0) {
+              enemiesRef.current.splice(j, 1);
+              s.hits += 1;
+              p.combo += 1;
+              s.score += 120 + p.combo * 8;
+              particlesRef.current.push({ x: e.x, y: e.y, life: 16, dx: 0.015, dy: -0.015 });
+              s.message = p.combo > 8 ? 'Hot streak! Keep firing!' : 'Nice hit. Keep pressure on.';
+            }
             break;
+          }
+        }
+        if (hit) bulletsRef.current.splice(i, 1);
+      }
+
+      // Missed enemies
+      for (let i = enemiesRef.current.length - 1; i >= 0; i -= 1) {
+        if (enemiesRef.current[i].y > 0.84) {
+          enemiesRef.current.splice(i, 1);
+          s.miss += 1;
+          p.combo = 0;
+          p.lives -= 1;
+          s.message = 'A henchman slipped through. Focus.';
+          if (p.lives <= 0) {
+            finish();
+            return;
           }
         }
       }
 
+      bulletsRef.current = bulletsRef.current.filter(b => b.y > -0.1);
+
       particlesRef.current = particlesRef.current
-        .map(p => ({ ...p, x: p.x + p.dx, y: p.y + p.dy, life: p.life - 1 }))
-        .filter(p => p.life > 0);
-      particlesRef.current.forEach(p => {
+        .map(pt => ({ ...pt, x: pt.x + pt.dx, y: pt.y + pt.dy, life: pt.life - 1 }))
+        .filter(pt => pt.life > 0);
+
+      // Draw units
+      bulletsRef.current.forEach(b => {
+        ctx.fillStyle = '#94FF70';
+        ctx.fillRect(b.x * w - b.w / 2, b.y * h - b.h, b.w, b.h);
+      });
+      enemiesRef.current.forEach(e => drawEnemy(e, w, h, time));
+      particlesRef.current.forEach(pt => {
         ctx.fillStyle = '#FFD700';
-        ctx.fillRect(w * p.x, h * p.y, 3, 3);
+        ctx.fillRect(pt.x * w, pt.y * h, 3, 3);
       });
 
-      if (timeLeftRef.current <= 0) finish();
+      // Player
+      const px = p.x * w;
+      const py = h * 0.84;
+      if (SPRITEMAP.actionKamen && SPRITEMAP.actionKamen.complete) {
+        ctx.drawImage(SPRITEMAP.actionKamen, 0, 0, 16, 16, px - 28, py - 46, 56, 56);
+      } else {
+        ctx.fillStyle = '#B0C4DE'; ctx.fillRect(px - 18, py - 40, 36, 34);
+        ctx.fillStyle = '#FFFFFF'; ctx.fillRect(px - 10, py - 46, 20, 12);
+      }
+      ctx.fillStyle = '#7fe1ff'; ctx.fillRect(px - 2, py - 60, 4, 18);
+
+      // HUD + message
+      const hudFont = Math.max(10, Math.floor(w * 0.011));
+      const panelW = Math.max(260, w * 0.23);
+      ctx.fillStyle = 'rgba(8,8,12,0.9)'; ctx.fillRect(18, 16, panelW, 122);
+      ctx.strokeStyle = '#FFF'; ctx.strokeRect(18, 16, panelW, 122);
+      ctx.fillStyle = '#FFF'; ctx.font = `${hudFont}px "Press Start 2P"`;
+      ctx.fillText(`SCORE ${s.score}`, 30, 42);
+      ctx.fillText(`HITS ${s.hits}`, 30, 68);
+      ctx.fillText(`TIME ${s.timeLeft}s`, 30, 94);
+      ctx.fillText(`WAVE ${s.wave}`, 30, 120);
+
+      ctx.fillStyle = 'rgba(8,8,12,0.9)'; ctx.fillRect(w - 210, 16, 192, 68);
+      ctx.strokeStyle = '#FFD700'; ctx.strokeRect(w - 210, 16, 192, 68);
+      ctx.fillStyle = '#FFD700'; ctx.font = `${Math.max(9, hudFont - 1)}px "Press Start 2P"`;
+      ctx.fillText(`LIVES ${p.lives}`, w - 194, 42);
+      ctx.fillText(`COMBO ${p.combo}`, w - 194, 66);
+
+      ctx.fillStyle = 'rgba(5,7,16,0.92)'; ctx.fillRect(18, h - 92, w - 36, 72);
+      ctx.strokeStyle = '#FFD700'; ctx.strokeRect(18, h - 92, w - 36, 72);
+      ctx.fillStyle = '#FFF'; ctx.font = `${Math.max(9, hudFont - 1)}px "Press Start 2P"`;
+      wrapCanvasText(ctx, `Shin-chan: ${s.message} Move: A/D or Arrow Keys. Shoot: Space or Click.`, 30, h - 58, w - 58, Math.max(13, hudFont + 2));
+
+      if (s.timeLeft <= 0) finish();
     };
 
-    rafRef.current = requestAnimationFrame(render);
-    spawnLoop();
-    timerRef.current = window.setInterval(() => {
-      if (finishedRef.current) return;
-      timeLeftRef.current -= 1;
-      if (timeLeftRef.current === 18) { phaseRef.current = 2; actionRef.current = 'SECOND WAVE. HENCHMEN ARE FASTER NOW.'; spawnLoop(); }
-      if (timeLeftRef.current === 9) { phaseRef.current = 3; actionRef.current = 'FINAL WAVE. SHOOT EVERYTHING.'; spawnLoop(); }
-      if (timeLeftRef.current <= 0) finish();
-    }, 1000);
-
-    canvas.addEventListener('pointerdown', shoot);
+    requestAnimationFrame(tick);
     return () => {
-      finishedRef.current = true;
-      cancelAnimationFrame(rafRef.current);
-      clearInterval(spawnRef.current);
+      runningRef.current = false;
+      clearInterval(spawnTimerRef.current);
       clearInterval(timerRef.current);
       window.removeEventListener('resize', resize);
-      canvas.removeEventListener('pointerdown', shoot);
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+      canvas.removeEventListener('pointermove', onPointerMove);
+      canvas.removeEventListener('pointerdown', onPointerDown);
     };
-  }, [onFinish, shoot, flash]);
+  }, [finish]);
 
   return <canvas ref={canvasRef} className="interior-canvas" />;
 }
@@ -1722,12 +1688,12 @@ function SlideDeck({ profile }) {
   return (
     <div className="slides-container cinematic-act2">
        {slide === 1 && <Slide1 onNext={() => setSlide(2)} />}
-       {slide === 2 && <Slide2 onNext={() => setSlide(3)} />}
-       {slide === 3 && <Slide3 profile={profile} onNext={() => setSlide(4)} />}
-       {slide === 4 && <Slide4 onNext={() => setSlide(5)} />}
+       {slide === 2 && <Slide3 profile={profile} onNext={() => setSlide(3)} />}
+       {slide === 3 && <Slide2 profile={profile} onNext={() => setSlide(4)} />}
+       {slide === 4 && <Slide4 profile={profile} onNext={() => setSlide(5)} />}
        {slide === 5 && <Slide5 profile={profile} onNext={() => setSlide(6)} />}
-       {slide === 6 && <Slide6 onYes={() => setSlide(7)} />}
-       {slide === 7 && <Slide7 />}
+       {slide === 6 && <Slide6 profile={profile} onYes={() => setSlide(7)} />}
+       {slide === 7 && <Slide7 profile={profile} />}
     </div>
   );
 }
@@ -1799,21 +1765,21 @@ function Slide1({ onNext }) {
   );
 }
 
-function Slide2({ onNext }) {
+function Slide2({ profile, onNext }) {
   const canvasRef = useRef(null);
   const [visible, setVisible] = useState(1);
   const [done, setDone] = useState(false);
-  const events = [
-    'he liked her first. said nothing.',
-    'had a lot to say. typed nothing.',
-    'told her. briefly. then immediately regretted it.',
-    'panicked. vanished. classic move.',
-    'she started liking him. during the silence. ironic.',
-    'both assumed. neither asked.',
-    'weeks of "i\'m fine" energy.',
-    'talked. sorted it out.',
-    'went on a date. and now we\'re here.'
-  ];
+  const events = useMemo(() => [
+    'He liked her first. Said nothing.',
+    'Had a lot to say. Typed nothing.',
+    'Tried to explain. Immediately panicked.',
+    'Disappeared for a while. Classic move.',
+    'She started liking him during silence. Irony.',
+    `Meanwhile you chose ${profile.snackChoice || 'a suspicious snack'} in court.`,
+    `You ranked ${profile.topChoice || 'chaotic behavior'} as Priority 1.`,
+    'Talk happened. Confusion reduced.',
+    'Date happened. We are here now.'
+  ], [profile]);
 
   const advance = useCallback(() => {
     setVisible(v => {
@@ -1826,40 +1792,27 @@ function Slide2({ onNext }) {
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d', { alpha: false });
     const resize = () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; };
     resize();
     window.addEventListener('resize', resize);
     let rafId = 0;
 
-    const drawSketch = (x, y, index) => {
-      ctx.strokeStyle = '#1a1a1a';
-      ctx.lineWidth = 1.5;
-      ctx.setLineDash([4, 2]);
-      ctx.beginPath();
-      ctx.rect(x - 60, y - 52, 120, 104);
-      ctx.stroke();
-      ctx.setLineDash([]);
-      ctx.fillStyle = '#1a1a1a';
-      ctx.font = '18px Caveat, cursive';
-      ctx.fillText(events[index], x - 58, y + 72);
-      ctx.lineWidth = 1.5;
-      const drawStick = (sx, sy, heart = false) => {
-        ctx.beginPath(); ctx.arc(sx, sy, 10, 0, Math.PI * 2); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(sx, sy + 10); ctx.lineTo(sx, sy + 28); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(sx, sy + 16); ctx.lineTo(sx - 10, sy + 24); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(sx, sy + 16); ctx.lineTo(sx + 10, sy + 24); ctx.stroke();
-        if (heart) { ctx.beginPath(); ctx.moveTo(sx + 14, sy - 18); ctx.lineTo(sx + 18, sy - 12); ctx.lineTo(sx + 22, sy - 18); ctx.stroke(); }
-      };
-      if (index === 0) drawStick(x - 16, y - 4, true);
-      if (index === 1) { ctx.beginPath(); ctx.rect(x - 24, y - 14, 28, 22); ctx.stroke(); }
-      if (index === 2) { ctx.beginPath(); ctx.moveTo(x - 18, y - 4); ctx.lineTo(x + 12, y - 16); ctx.stroke(); }
-      if (index === 3) { ctx.beginPath(); ctx.moveTo(x - 12, y + 4); ctx.lineTo(x + 24, y - 22); ctx.stroke(); }
-      if (index === 4) { drawStick(x + 6, y - 6, true); }
-      if (index === 5) { ctx.beginPath(); ctx.moveTo(x - 24, y + 8); ctx.lineTo(x + 24, y + 8); ctx.stroke(); }
-      if (index === 6) { ctx.beginPath(); ctx.rect(x - 20, y - 10, 40, 18); ctx.stroke(); }
-      if (index === 7) { ctx.beginPath(); ctx.moveTo(x - 16, y + 10); ctx.lineTo(x + 20, y - 12); ctx.stroke(); }
-      if (index === 8) { ctx.beginPath(); ctx.moveTo(x + 24, y - 10); ctx.lineTo(x + 44, y - 10); ctx.stroke(); }
+    const wrapText = (text, maxWidth) => {
+      const words = text.split(' ');
+      const lines = [];
+      let line = '';
+      words.forEach(word => {
+        const next = line ? `${line} ${word}` : word;
+        if (ctx.measureText(next).width > maxWidth && line) {
+          lines.push(line);
+          line = word;
+        } else {
+          line = next;
+        }
+      });
+      if (line) lines.push(line);
+      return lines;
     };
 
     const draw = () => {
@@ -1873,26 +1826,57 @@ function Slide2({ onNext }) {
       for (let y = 0; y < h; y += 6) {
         for (let x = 0; x < w; x += 6) ctx.fillRect(x, y, 1, 1);
       }
+
+      const top = 88;
+      const bottom = h - 120;
+      const centerX = w * 0.5;
+      const step = (bottom - top) / Math.max(1, events.length - 1);
+      const cardW = Math.min(480, w * 0.38);
+      const cardH = Math.max(64, Math.min(108, step * 0.8));
+
       ctx.strokeStyle = '#1a1a1a';
-      ctx.lineWidth = 2;
+      ctx.lineWidth = 3;
       ctx.beginPath();
-      ctx.moveTo(w * 0.08, h * 0.5 + 3);
-      for (let x = w * 0.08; x <= w * 0.92; x += 18) ctx.lineTo(x, h * 0.5 + Math.sin(x / 35) * 3);
+      ctx.moveTo(centerX, top - 24);
+      ctx.lineTo(centerX, bottom + 24);
       ctx.stroke();
 
-      const positions = [
-        [w * 0.14, h * 0.36], [w * 0.26, h * 0.28], [w * 0.38, h * 0.42], [w * 0.5, h * 0.3], [w * 0.62, h * 0.43],
-        [w * 0.74, h * 0.29], [w * 0.86, h * 0.41], [w * 0.5, h * 0.28], [w * 0.72, h * 0.39]
-      ];
       for (let i = 0; i < visible; i += 1) {
-        drawSketch(positions[i][0], positions[i][1], i);
+        const y = top + i * step;
+        const left = i % 2 === 0;
+        const cardX = left ? centerX - cardW - 42 : centerX + 42;
+        const dotX = left ? centerX - 8 : centerX + 8;
+
+        ctx.fillStyle = '#fff9ef';
+        ctx.strokeStyle = '#1a1a1a';
+        ctx.lineWidth = 2;
+        ctx.fillRect(cardX, y - cardH / 2, cardW, cardH);
+        ctx.strokeRect(cardX, y - cardH / 2, cardW, cardH);
+
+        ctx.fillStyle = '#1a1a1a';
+        ctx.font = '18px Caveat, cursive';
+        const lines = wrapText(events[i], cardW - 24);
+        lines.slice(0, 3).forEach((line, idx) => {
+          ctx.fillText(line, cardX + 12, y - cardH / 2 + 24 + idx * 22);
+        });
+
+        ctx.fillStyle = '#CC2200';
+        ctx.beginPath();
+        ctx.arc(dotX, y, 8, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#1a1a1a';
+        ctx.beginPath();
+        ctx.moveTo(left ? dotX + 8 : dotX - 8, y);
+        ctx.lineTo(left ? cardX + cardW : cardX, y);
+        ctx.stroke();
       }
+
       if (done) {
         ctx.save();
-        ctx.translate(w * 0.18, h * 0.9);
+        ctx.translate(w * 0.1, h * 0.92);
         ctx.rotate(-0.06);
         ctx.fillStyle = '#1a1a1a';
-        ctx.font = '22px Caveat, cursive';
+        ctx.font = '24px Caveat, cursive';
         ctx.fillText("brought to you by Niggesh, who still can't believe this worked.", 0, 0);
         ctx.restore();
       }
@@ -1909,10 +1893,22 @@ function Slide2({ onNext }) {
     };
   }, [advance, done, onNext, visible]);
 
-  return <div className="act2-scene scene-2 paper-world"><canvas ref={canvasRef} className="scene-canvas" /><p className="paper-hint">{done ? '▼' : ''}</p></div>;
+  return (
+    <div className="act2-scene scene-2 paper-world">
+      <canvas ref={canvasRef} className="scene-canvas" />
+      <p className="paper-hint">{done ? 'tap to continue ▼' : 'tap to reveal timeline'}</p>
+    </div>
+  );
 }
 
 function Slide3({ profile, onNext }) {
+  const energyTone = useMemo(() => {
+    const top = (profile.topChoice || '').toLowerCase();
+    if (top.includes('trip') || top.includes('adventure')) return 'adventure';
+    if (top.includes('home') || top.includes('couch')) return 'calm';
+    return 'chaos';
+  }, [profile]);
+
   const reportLines = useMemo(() => [
     'KASUKABE DETECTIVE AGENCY',
     'Case No. 00492 - "The Player Profile"',
@@ -1928,10 +1924,11 @@ function Slide3({ profile, onNext }) {
     '',
     'FINDING 3:',
     `Diary response on the ghost question: ${profile.quizAnswers?.[0] || 'unknown'}.`,
+    `Personality inference: ${energyTone.toUpperCase()} ENERGY.`,
     '',
     'CONCLUSION:',
     'something about this is dangerous but correct.'
-  ], [profile]);
+  ], [profile, energyTone]);
   const [visible, setVisible] = useState(0);
   const [done, setDone] = useState(false);
 
@@ -1944,7 +1941,7 @@ function Slide3({ profile, onNext }) {
   }, [visible, reportLines.length]);
 
   return (
-    <div className="act2-scene scene-3 act2-frame act2-frame-paper" onClick={() => (done ? onNext() : setVisible(v => Math.min(reportLines.length, v + 1)))}>
+    <div className={`act2-scene scene-3 act2-frame act2-frame-paper profile-tone-${energyTone}`} onClick={() => (done ? onNext() : setVisible(v => Math.min(reportLines.length, v + 1)))}>
       <div className="paper-report">
         <div className="report-header">
           <div>KASUKABE INVESTIGATION REPORT</div>
@@ -1961,7 +1958,7 @@ function Slide3({ profile, onNext }) {
   );
 }
 
-function Slide4({ onNext }) {
+function Slide4({ profile, onNext }) {
   const words = ['he', 'liked', 'you', 'first.'];
   const [index, setIndex] = useState(-1);
   const [ghost, setGhost] = useState(false);
@@ -1990,7 +1987,7 @@ function Slide4({ onNext }) {
       {ghost && <div className="ghost-word">first.</div>}
       {stamp && <div className="massive-stamp">FIRST.</div>}
       <div className="record-line-wrap">
-        <p className="record-line">on record. officially. can't undo it. it's done.</p>
+        <p className="record-line">on record. officially. can't undo it. it's done. also: {profile.topChoice || 'chaos'} was definitely a clue.</p>
       </div>
       <ShinCorner pose="faceDown" className="corner-bottom-right" />
       {done && <p className="scene-hint">▼</p>}
@@ -2055,12 +2052,12 @@ function Slide5({ profile, onNext }) {
   return (
     <div className={`act2-scene scene-5 act2-frame act2-frame-dark ${tint ? 'red-tint' : ''}`} onClick={() => done && onNext()}>
       <div className="yesno-wrap">
-        <h2 className="small-load">loading courage...</h2>
+        <h2 className="small-load">loading courage... calibrated for {action || 'chaos'} mode</h2>
         <h1 className="pulse-question">will you be his girlfriend?</h1>
         <div className="ask-buttons exact-two">
           <button className="yes-btn yes-glow" onClick={() => setDone(true)}>YES</button>
           {noStage < 2 ? (
-            <button className={`no-btn ${noStage === 1 ? 'small-no' : ''}`} onClick={handleNo}>NO</button>
+            <button className={`no-btn ${noStage === 1 ? 'small-no' : ''}`} onClick={handleNo}>NO 😡</button>
           ) : (
             <button className="no-btn no-turned-yes" onClick={() => setDone(true)}>yes (enthusiastically)</button>
           )}
@@ -2068,6 +2065,9 @@ function Slide5({ profile, onNext }) {
       </div>
       {noStage > 0 && (
         <div className={`angry-ball ${noStage === 2 ? 'big-ball rapid-shake' : 'small-ball shake'}`}>
+          <div className="angry-emoji">
+            <img src={angryEmoji} alt="angry emoji" className="angry-emoji-img" />
+          </div>
           <div className="ball-copy">{noStage === 1 ? '...excuse me???' : ballText}</div>
         </div>
       )}
@@ -2078,7 +2078,7 @@ function Slide5({ profile, onNext }) {
   );
 }
 
-function Slide6({ onYes }) {
+function Slide6({ profile, onYes }) {
   const [phase, setPhase] = useState('load');
   const [progress, setProgress] = useState(0);
   const [q1, setQ1] = useState('');
@@ -2090,23 +2090,20 @@ function Slide6({ onYes }) {
     if (phase !== 'load') return;
     const timer = setInterval(() => {
       setProgress(v => {
-        const next = Math.min(100, v + 7);
+        const next = Math.min(100, v + 8);
         if (next === 100) {
           clearInterval(timer);
-          setTimeout(() => {
-            setProgress(0);
-            setTimeout(() => setPhase('question'), 500);
-          }, 650);
+          setTimeout(() => setPhase('question'), 420);
         }
         return next;
       });
-    }, 130);
+    }, 110);
     return () => clearInterval(timer);
   }, [phase]);
 
   useEffect(() => {
     if (phase !== 'question') return;
-    const line1 = 'so, You -';
+    const line1 = `so, after ${profile.snackChoice || 'all this'} -`;
     const line2 = 'will you be his girlfriend?';
     let i = 0;
     let j = 0;
@@ -2130,7 +2127,7 @@ function Slide6({ onYes }) {
     };
 
     type1();
-  }, [phase]);
+  }, [phase, profile]);
 
   const handleNo = () => {
     if (state === 0) {
@@ -2162,8 +2159,13 @@ function Slide6({ onYes }) {
           <h1 className="pulse-question">{q2}</h1>
           <div className="ask-buttons exact-two">
             <button className="yes-btn yes-glow" onClick={onYes}>YES</button>
-            <button className={`no-btn ${state > 0 ? 'broken' : ''} ${state === 2 ? 'no-turned-yes' : ''}`} onClick={state === 2 ? onYes : handleNo}>{state === 2 ? 'yes (enthusiastically)' : 'NO'}</button>
+            <button className={`no-btn ${state > 0 ? 'broken' : ''} ${state === 2 ? 'no-turned-yes' : ''}`} onClick={state === 2 ? onYes : handleNo}>{state === 2 ? 'yes (enthusiastically)' : 'NO 😡'}</button>
           </div>
+          {state > 0 && (
+            <div className="angry-emoji-pop">
+              <img src={angryEmoji} alt="angry emoji" className="angry-emoji-pop-img" />
+            </div>
+          )}
         </div>
       )}
       {phase === 'question' && <ShinCorner pose={state === 2 ? 'run' : 'sign'} className="corner-bottom-right" />}
@@ -2171,7 +2173,7 @@ function Slide6({ onYes }) {
   );
 }
 
-function Slide7() {
+function Slide7({ profile }) {
   const [step, setStep] = useState(0);
   const runnerRef = useRef(null);
 
@@ -2214,6 +2216,7 @@ function Slide7() {
       <div className="end-lines">
         {step >= 1 && <p>Niggesh is going to be so embarrassed you saw this.</p>}
         {step >= 2 && <p>good.</p>}
+        {step >= 2 && <p>you picked {profile.snackChoice || 'evidence'} and ranked {profile.topChoice || 'chaos'} first. very on brand.</p>}
         {step >= 3 && <p>date 2 loading...</p>}
       </div>
       {step >= 3 && (
