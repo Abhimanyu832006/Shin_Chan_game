@@ -474,65 +474,152 @@ function GameCanvas({
 
 function SnackGame({ onFinish }) {
   const canvasRef = useRef(null);
-  const [round, setRound] = useState(0);
-  const [hoverSide, setHoverSide] = useState(null);
-  const [picked, setPicked] = useState(null);
-  const matchups = [
-    ['Chocolate Biscuits', 'Chips'], ['Biryani', 'Pizza'], ['Mango Ice Cream', 'Choc Ice Cream'],
-    ['Maggi', 'Noodles'], ['Samosa', 'Burger'], ['Kasukabe pudding', 'Leftover evidence']
+  const audioCtxRef = useRef(null);
+  const roundRef = useRef(0);
+  const hoverRef = useRef(-1);
+  const selectedRef = useRef(-1);
+  const boardRectsRef = useRef([]);
+  const flashUntilRef = useRef(0);
+  const stampRef = useRef({ side: -1, start: 0 });
+  const transitionRef = useRef({ mode: 'idle', start: 0, nextRound: 0 });
+  const labelRef = useRef({ full: '', shown: '', nextAt: 0 });
+  const dialogueRef = useRef({ full: '', shown: '', nextAt: 0, done: false });
+
+  const rounds = [
+    { left: { id: 'biscuits', name: 'Chocolate biscuits' }, right: { id: 'chips', name: 'Chips' }, line: 'EXHIBIT A VERSUS EXHIBIT B. PICK THE GUILTY FOOD.' },
+    { left: { id: 'biryani', name: 'Biryani' }, right: { id: 'pizza', name: 'Pizza' }, line: 'ROUND TWO. BIRYANI OR PIZZA. NO MERCY.' },
+    { left: { id: 'mango', name: 'Mango ice cream' }, right: { id: 'chocoIce', name: 'Chocolate ice cream' }, line: 'ICE CREAM TRIAL. ONE OF THEM IS SUS.' },
+    { left: { id: 'maggi', name: 'Maggi' }, right: { id: 'burger', name: 'Burger' }, line: 'FAST FOOD HEARING. POINT AT THE CULPRIT.' },
+    { left: { id: 'samosa', name: 'Samosa' }, right: { id: 'chai', name: 'Chai' }, line: 'SNACK COURT CONTINUES. WHO IS GUILTY?' },
+    { left: { id: 'coffee', name: 'Cold coffee' }, right: { id: 'pudding', name: 'Kasukabe pudding' }, line: 'FINAL VERDICT. DECIDE THE FATE OF THE PUDDING.' }
   ];
 
-  const drawEvidence = (ctx, label, x, y, hover, w, h) => {
-    ctx.save();
-    ctx.translate(x, y);
-    if (hover) {
-      ctx.fillStyle = 'rgba(255, 236, 160, 0.25)';
-      ctx.fillRect(-w / 2 - 10, -h / 2 - 10, w + 20, h + 20);
+  const ensureAudio = () => {
+    if (!audioCtxRef.current) {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (Ctx) audioCtxRef.current = new Ctx();
     }
-    ctx.fillStyle = '#f5dca8';
-    ctx.fillRect(-w / 2, -h / 2, w, h);
-    ctx.strokeStyle = '#2a1d10';
-    ctx.lineWidth = 3;
-    ctx.strokeRect(-w / 2, -h / 2, w, h);
-    ctx.fillStyle = '#000';
-    ctx.font = '11px "Press Start 2P"';
-    ctx.fillText(label, -w / 2 + 12, h / 2 + 18);
+    return audioCtxRef.current;
+  };
 
-    const short = label.toLowerCase();
-    if (short.includes('biryani')) {
-      ctx.fillStyle = '#a36a2a';
-      ctx.fillRect(-28, -18, 56, 30);
-      ctx.fillStyle = '#f1d28b';
-      ctx.fillRect(-24, -10, 48, 16);
-      ctx.fillStyle = '#d94f30';
-      ctx.fillRect(-18, -6, 8, 4); ctx.fillRect(-4, -8, 8, 4); ctx.fillRect(10, -5, 8, 4);
-    } else if (short.includes('pizza')) {
-      ctx.fillStyle = '#f1b14a';
-      ctx.beginPath(); ctx.moveTo(-24, 16); ctx.lineTo(24, 16); ctx.lineTo(10, -18); ctx.closePath(); ctx.fill();
-      ctx.fillStyle = '#d44939'; ctx.fillRect(-8, -4, 6, 6); ctx.fillRect(4, 0, 6, 6);
-    } else if (short.includes('pudding')) {
-      ctx.fillStyle = '#6f4a2a'; ctx.fillRect(-18, -14, 36, 26);
-      ctx.fillStyle = '#f4d37d'; ctx.fillRect(-16, -12, 32, 18);
-      ctx.fillStyle = '#fff'; ctx.fillRect(-8, -6, 16, 4);
-    } else if (short.includes('chips')) {
-      ctx.fillStyle = '#f7c94c'; ctx.fillRect(-20, -8, 40, 18);
-      ctx.fillStyle = '#c48b31'; ctx.fillRect(-12, -18, 8, 12); ctx.fillRect(0, -20, 8, 14); ctx.fillRect(12, -17, 8, 11);
-    } else if (short.includes('maggi') || short.includes('noodles')) {
-      ctx.fillStyle = '#f0d87a'; ctx.fillRect(-22, -12, 44, 28);
-      ctx.fillStyle = '#cc7b28'; ctx.fillRect(-16, -6, 32, 10);
-    } else if (short.includes('ice cream')) {
-      ctx.fillStyle = '#f7f7f7'; ctx.fillRect(-8, -18, 16, 14);
-      ctx.fillStyle = '#d2a45d'; ctx.fillRect(-4, -4, 8, 18);
-      ctx.fillStyle = short.includes('mango') ? '#f8c12d' : '#ad4e4d'; ctx.fillRect(-7, -16, 14, 6);
-    } else if (short.includes('samosa') || short.includes('burger')) {
-      ctx.fillStyle = short.includes('samosa') ? '#c98a31' : '#b88c4a';
-      ctx.fillRect(-24, -12, 48, 24);
-      ctx.fillStyle = '#3c7a2e'; ctx.fillRect(-18, -6, 36, 4);
-      ctx.fillStyle = '#9a2b2b'; ctx.fillRect(-18, 0, 36, 4);
-    } else if (short.includes('chai') || short.includes('coffee')) {
-      ctx.fillStyle = '#f4f4f4'; ctx.fillRect(-16, -10, 32, 20);
-      ctx.fillStyle = '#c79c5e'; ctx.fillRect(12, -4, 8, 12);
-      ctx.fillStyle = short.includes('chai') ? '#895028' : '#5b381f'; ctx.fillRect(-12, -6, 24, 12);
+  const playThud = () => {
+    const audio = ensureAudio();
+    if (!audio) return;
+    const osc = audio.createOscillator();
+    const gain = audio.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(80, audio.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(35, audio.currentTime + 0.1);
+    gain.gain.setValueAtTime(0.16, audio.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, audio.currentTime + 0.1);
+    osc.connect(gain).connect(audio.destination);
+    osc.start();
+    osc.stop(audio.currentTime + 0.12);
+  };
+
+  const setDialogue = (text, now) => {
+    dialogueRef.current = { full: `Shin-chan: ${text}`, shown: '', nextAt: now, done: false };
+  };
+
+  const drawSteam = (ctx, x, y, time) => {
+    const drift = Math.sin(time / 420) * 2;
+    ctx.fillStyle = 'rgba(255,255,255,0.75)';
+    for (let i = 0; i < 3; i += 1) {
+      for (let p = 0; p < 7; p += 1) {
+        const px = x + i * 8 + Math.sin((p + i) * 0.8) * 3 + drift;
+        const py = y - p * 4 - i * 3;
+        ctx.fillRect(Math.round(px), Math.round(py), 2, 2);
+      }
+    }
+  };
+
+  const drawFood = (ctx, food, cx, cy, time) => {
+    ctx.save();
+    ctx.translate(cx, cy);
+    if (food === 'biscuits') {
+      ctx.fillStyle = '#FFD700'; ctx.fillRect(-36, 24, 72, 12);
+      ctx.fillStyle = '#6B3A2A'; ctx.fillRect(-34, -20, 68, 48);
+      ctx.fillStyle = '#3D1A0A'; for (let y = -18; y < -2; y += 4) ctx.fillRect(-30, y, 60, 2);
+      ctx.fillStyle = '#8B5A3A'; for (let y = -2; y < 20; y += 6) for (let x = -26; x < 26; x += 8) ctx.fillRect(x, y, 3, 3);
+      ctx.fillStyle = '#FFF'; ctx.font = '6px "Press Start 2P"'; ctx.fillText('CHOCO', -16, 32);
+    } else if (food === 'chips') {
+      ctx.fillStyle = '#FFD700'; ctx.fillRect(-30, -28, 60, 18); ctx.fillRect(-36, -10, 72, 36); ctx.fillRect(-25, 26, 50, 20);
+      ctx.fillStyle = '#FFB800'; ctx.fillRect(-30, -30, 10, 8); ctx.fillRect(20, -30, 10, 8);
+      ctx.fillStyle = '#CC2200'; for (let i = -28; i < 34; i += 6) ctx.fillRect(i, -4 + Math.floor(i / 10), 16, 4);
+      ctx.fillStyle = '#FFF'; ctx.fillRect(-14, 4, 30, 18);
+      ctx.fillStyle = '#FFDB58'; ctx.beginPath(); ctx.ellipse(0, -18, 10, 5, 0, 0, Math.PI * 2); ctx.fill();
+    } else if (food === 'biryani') {
+      ctx.fillStyle = '#8B4513'; ctx.fillRect(-40, 16, 80, 24);
+      ctx.fillStyle = '#5E2F15'; ctx.fillRect(-38, 38, 76, 4);
+      ctx.fillStyle = '#FFFFF0'; ctx.fillRect(-34, -8, 68, 24);
+      ctx.fillStyle = '#FFD700'; for (let i = -30; i < 32; i += 6) ctx.fillRect(i, -4 + ((i / 6) % 2), 4, 4);
+      ctx.fillStyle = '#CC2200'; for (let i = 0; i < 9; i += 1) ctx.fillRect(-28 + i * 6, 6 + (i % 3), 2, 2);
+      ctx.fillStyle = '#2D8A2D'; for (let i = 0; i < 8; i += 1) ctx.fillRect(-26 + i * 7, 10 + (i % 2), 3, 2);
+      drawSteam(ctx, -12, -8, time);
+    } else if (food === 'pizza') {
+      ctx.fillStyle = '#E8922A'; ctx.beginPath(); ctx.moveTo(-44, 26); ctx.lineTo(44, 26); ctx.lineTo(0, -36); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#C47820'; ctx.fillRect(-44, 18, 88, 10);
+      ctx.fillStyle = '#CC2200'; ctx.fillRect(-36, 8, 72, 8);
+      ctx.fillStyle = '#FFD700'; ctx.fillRect(-38, -20, 76, 30);
+      ctx.fillStyle = '#8B0000'; [-18, 8, -2, 18, -26].forEach((x, i) => { ctx.beginPath(); ctx.arc(x, -6 + i * 5, 4, 0, Math.PI * 2); ctx.fill(); });
+      ctx.fillStyle = '#FFF'; ctx.fillRect(-20, 2, 2, 16);
+    } else if (food === 'mango' || food === 'chocoIce') {
+      ctx.fillStyle = '#C4935A'; ctx.beginPath(); ctx.moveTo(-24, 34); ctx.lineTo(24, 34); ctx.lineTo(0, -18); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#8B6230'; for (let y = 30; y > -16; y -= 8) ctx.fillRect(-20, y, 40, 1);
+      for (let x = -16; x <= 16; x += 8) ctx.fillRect(x, -12, 1, 44);
+      ctx.fillStyle = food === 'mango' ? '#FF9A3C' : '#4A2200'; ctx.beginPath(); ctx.arc(0, -26, 26, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#FFF'; ctx.fillRect(-10, -34, 6, 6);
+      ctx.fillStyle = food === 'mango' ? '#FF8820' : '#1A0A00'; for (let i = 0; i < 6; i += 1) ctx.fillRect(-14 + i * 6, -18 + (i % 3), 3, 2);
+    } else if (food === 'maggi') {
+      ctx.fillStyle = '#EEEEEE'; ctx.fillRect(-40, 14, 80, 30);
+      ctx.fillStyle = '#AAAAAA'; ctx.fillRect(-40, 14, 80, 3);
+      const cols = ['#FF9A3C', '#FFB347', '#FFC870'];
+      for (let i = 0; i < 10; i += 1) { ctx.fillStyle = cols[i % 3]; ctx.fillRect(-34 + i * 7, 22 + (i % 2) * 2, 16, 2); }
+      ctx.fillStyle = '#CC2200'; ctx.beginPath(); ctx.moveTo(6, 20); ctx.lineTo(14, 24); ctx.lineTo(6, 28); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#2D8A2D'; ctx.fillRect(4, 18, 3, 4);
+      drawSteam(ctx, -12, 8, time);
+    } else if (food === 'burger') {
+      ctx.fillStyle = '#E8922A'; ctx.fillRect(-40, 20, 80, 16);
+      ctx.fillStyle = '#3D1A00'; ctx.fillRect(-37, 8, 74, 12);
+      ctx.fillStyle = '#FFD700'; ctx.fillRect(-40, 0, 80, 8);
+      ctx.fillStyle = '#3D8A3D'; for (let i = -42; i <= 42; i += 8) ctx.fillRect(i, -8 + ((i / 8) % 2), 8, 8);
+      ctx.fillStyle = '#E8922A'; ctx.beginPath(); ctx.ellipse(0, -16, 40, 16, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#FFF'; [-20, -8, 2, 12, 22].forEach((sx) => { ctx.fillRect(sx, -20, 4, 2); });
+    } else if (food === 'samosa') {
+      ctx.fillStyle = '#C4935A'; ctx.beginPath(); ctx.moveTo(-34, 30); ctx.lineTo(34, 30); ctx.lineTo(0, -30); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#B08040'; for (let y = 24; y > -22; y -= 8) ctx.fillRect(-26 + ((y / 8) % 2) * 4, y, 52, 2);
+      ctx.fillStyle = '#8B6230'; ctx.fillRect(-2, -18, 4, 40);
+      drawSteam(ctx, -6, -24, time);
+    } else if (food === 'chai') {
+      ctx.fillStyle = '#FFFFF0'; ctx.fillRect(-22, -8, 44, 50);
+      ctx.fillStyle = '#8B4513'; ctx.fillRect(-18, -4, 36, 34);
+      ctx.fillStyle = '#DDDDCC'; ctx.fillRect(22, 8, 8, 20);
+      ctx.fillStyle = '#EEEEEE'; ctx.beginPath(); ctx.ellipse(0, 42, 32, 6, 0, 0, Math.PI * 2); ctx.fill();
+      drawSteam(ctx, -12, -10, time);
+    } else if (food === 'coffee') {
+      ctx.strokeStyle = '#AAAAAA'; ctx.lineWidth = 2; ctx.strokeRect(-20, -24, 40, 70);
+      ctx.fillStyle = '#3D1A00'; ctx.fillRect(-18, 18, 36, 26);
+      ctx.fillStyle = '#C4935A'; ctx.fillRect(-18, 3, 36, 15);
+      ctx.fillStyle = '#FFFDE0'; ctx.fillRect(-18, -12, 36, 15);
+      ctx.fillStyle = '#FFF'; ctx.fillRect(-14, -8, 6, 4); ctx.fillRect(2, -6, 6, 4);
+      ctx.fillStyle = '#FFF'; ctx.fillRect(-16, -20, 2, 56);
+      ctx.fillStyle = '#CC2200'; for (let y = -42; y < -12; y += 6) ctx.fillRect(10, y, 4, 3);
+      ctx.fillStyle = '#FFFFFF'; for (let y = -39; y < -9; y += 6) ctx.fillRect(10, y + 3, 4, 3);
+    } else if (food === 'pudding') {
+      const pulse = 1 + Math.sin(time / 260) * 0.02;
+      ctx.scale(pulse, pulse);
+      ctx.fillStyle = 'rgba(255,215,0,0.2)'; ctx.beginPath(); ctx.arc(0, 0, 62, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#FFD700'; ctx.lineWidth = 2;
+      for (let i = 0; i < 8; i += 1) {
+        const a = (Math.PI * 2 * i) / 8;
+        ctx.beginPath(); ctx.moveTo(Math.cos(a) * 34, Math.sin(a) * 34); ctx.lineTo(Math.cos(a) * 56, Math.sin(a) * 56); ctx.stroke();
+      }
+      ctx.fillStyle = '#FFD700'; ctx.beginPath(); ctx.ellipse(0, 8, 36, 28, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#FFC942'; ctx.beginPath(); ctx.ellipse(0, -8, 30, 18, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#C47820'; ctx.fillRect(-24, -6, 4, 20); ctx.fillRect(-8, -12, 4, 24); ctx.fillRect(8, -8, 4, 20); ctx.fillRect(20, -6, 4, 18);
+      ctx.fillStyle = '#FFD700'; ctx.fillRect(-10, -34, 20, 8);
+      ctx.fillStyle = '#CC2200'; ctx.fillRect(-7, -36, 4, 4);
+      ctx.fillStyle = '#2255CC'; ctx.fillRect(3, -36, 4, 4);
     }
     ctx.restore();
   };
@@ -541,82 +628,262 @@ function SnackGame({ onFinish }) {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d', { alpha: false });
-    const resize = () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; };
-    const updateHover = (event) => {
-      const rect = canvas.getBoundingClientRect();
-      const x = event.clientX - rect.left;
-      setHoverSide(x < rect.width / 2 ? 'left' : 'right');
+    if (!ctx) return;
+
+    const resize = () => {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+      ctx.imageSmoothingEnabled = false;
     };
-    const handleClick = (event) => {
+
+    const beginRound = (idx, now) => {
+      setDialogue(rounds[idx].line, now);
+      labelRef.current = { full: '', shown: '', nextAt: now };
+      selectedRef.current = -1;
+      stampRef.current = { side: -1, start: 0 };
+    };
+
+    const handleMove = (event) => {
       const rect = canvas.getBoundingClientRect();
       const x = event.clientX - rect.left;
-      const side = x < rect.width / 2 ? 'left' : 'right';
-      const current = matchups[round];
-      const choice = side === 'left' ? current[0] : current[1];
-      if (round < matchups.length - 1) {
-        setRound(r => r + 1);
-        if (round === matchups.length - 2) setPicked(choice);
-      } else {
-        onFinish({ snackChoice: choice });
+      const y = event.clientY - rect.top;
+      const hit = boardRectsRef.current.findIndex(r => x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h);
+      hoverRef.current = hit;
+      canvas.style.cursor = hit >= 0 ? 'pointer' : 'default';
+      if (hit >= 0) {
+        const item = hit === 0 ? rounds[roundRef.current].left.name : rounds[roundRef.current].right.name;
+        const txt = `EXHIBIT ${roundRef.current + 1}: ${item.toUpperCase()}`;
+        if (labelRef.current.full !== txt) labelRef.current = { full: txt, shown: '', nextAt: performance.now() };
       }
     };
+
+    const handleClick = (event) => {
+      const now = performance.now();
+      if (transitionRef.current.mode !== 'idle' || selectedRef.current !== -1) return;
+      const rect = canvas.getBoundingClientRect();
+      const x = event.clientX - rect.left;
+      const y = event.clientY - rect.top;
+      const side = boardRectsRef.current.findIndex(r => x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h);
+      if (side < 0) return;
+      const round = rounds[roundRef.current];
+      const picked = side === 0 ? round.left : round.right;
+      selectedRef.current = side;
+      flashUntilRef.current = now + 80;
+      stampRef.current = { side, start: now };
+      playThud();
+      setDialogue(`GUILTY. ${picked.name.toUpperCase()} ENTERS THE RECORD.`, now);
+
+      const nextRound = roundRef.current + 1;
+      if (nextRound >= rounds.length) {
+        window.setTimeout(() => onFinish({ snackChoice: picked.name }), 980);
+        return;
+      }
+      window.setTimeout(() => {
+        transitionRef.current = { mode: 'exit', start: performance.now(), nextRound };
+      }, 900);
+    };
+
     resize();
+    beginRound(0, performance.now());
     window.addEventListener('resize', resize);
-    canvas.addEventListener('pointermove', updateHover);
+    canvas.addEventListener('pointermove', handleMove);
     canvas.addEventListener('pointerdown', handleClick);
 
     let frameId = 0;
-    const render = () => {
+    const render = (time) => {
       frameId = requestAnimationFrame(render);
       const w = canvas.width;
       const h = canvas.height;
       ctx.clearRect(0, 0, w, h);
-      ctx.fillStyle = '#51311a';
-      ctx.fillRect(0, 0, w, h);
-      ctx.fillStyle = '#3a2413';
-      ctx.fillRect(w * 0.16, h * 0.18, w * 0.68, h * 0.56);
-      ctx.fillStyle = '#111';
-      ctx.fillRect(w * 0.42, h * 0.36, w * 0.16, h * 0.28);
-      ctx.fillStyle = '#e8d1a4';
-      ctx.fillRect(w * 0.44, h * 0.38, w * 0.12, h * 0.2);
-      ctx.fillStyle = '#ffd44d';
-      ctx.fillRect(w * 0.45, h * 0.62, w * 0.1, 4);
-      ctx.fillStyle = '#fff';
-      ctx.font = '12px "Press Start 2P"';
-      ctx.fillText('COURT OF EVIDENCE', w * 0.34, h * 0.12);
-      ctx.fillText('CLICK THE GUILTY FOOD', w * 0.29, h * 0.82);
 
-      // Shin-chan at desk
-      ctx.fillStyle = '#ffebc8'; ctx.fillRect(w * 0.48, h * 0.43, 24, 24);
-      ctx.fillStyle = '#111'; ctx.fillRect(w * 0.49, h * 0.44, 5, 5); ctx.fillRect(w * 0.505, h * 0.44, 5, 5);
-      ctx.fillStyle = '#c22'; ctx.fillRect(w * 0.495, h * 0.49, 12, 3);
-      ctx.fillStyle = '#f4cf6b'; ctx.fillRect(w * 0.47, h * 0.5, 34, 12);
-      ctx.fillStyle = '#fff'; ctx.fillRect(w * 0.52, h * 0.53, 3, 18); ctx.fillRect(w * 0.54, h * 0.53, 3, 18);
+      // Room layers
+      ctx.fillStyle = '#F5E8C8'; ctx.fillRect(0, 0, w, h * 0.5);
+      ctx.fillStyle = '#E8D5A8'; ctx.fillRect(0, 0, w, 20);
+      ctx.fillStyle = '#888'; ctx.fillRect(w * 0.5 - 1, 20, 2, 15);
+      ctx.fillStyle = '#FFFDE0'; ctx.beginPath(); ctx.ellipse(w * 0.5, 42, 10, 7, 0, 0, Math.PI * 2); ctx.fill();
+      const lg = ctx.createRadialGradient(w * 0.5, 60, 10, w * 0.5, 120, 140);
+      lg.addColorStop(0, 'rgba(255,220,100,0.2)'); lg.addColorStop(1, 'rgba(255,220,100,0)');
+      ctx.fillStyle = lg; ctx.fillRect(w * 0.5 - 160, 40, 320, 180);
 
-      drawEvidence(ctx, matchups[round][0], w * 0.24, h * 0.44, hoverSide === 'left', w * 0.2, h * 0.18);
-      drawEvidence(ctx, matchups[round][1], w * 0.76, h * 0.44, hoverSide === 'right', w * 0.2, h * 0.18);
+      ctx.fillStyle = '#F0EDE0'; ctx.fillRect(w * 0.04, 36, w * 0.18, h * 0.44);
+      ctx.strokeStyle = '#8B6230'; ctx.lineWidth = 2; ctx.strokeRect(w * 0.04, 36, w * 0.18, h * 0.44);
+      for (let gx = w * 0.04 + 10; gx < w * 0.22; gx += 20) ctx.fillRect(gx, 36, 2, h * 0.44);
+      for (let gy = 50; gy < h * 0.48; gy += 24) ctx.fillRect(w * 0.04, gy, w * 0.18, 2);
 
-      ctx.fillStyle = 'rgba(10, 12, 32, 0.92)';
-      ctx.fillRect(w * 0.12, h * 0.72, w * 0.76, 74);
-      ctx.strokeStyle = '#fff'; ctx.strokeRect(w * 0.12, h * 0.72, w * 0.76, 74);
-      ctx.fillStyle = '#fff';
-      ctx.font = '12px "Press Start 2P"';
-      ctx.fillText(round === matchups.length - 1 ? 'FINAL VERDICT. POINT AT THE GUILTY ONE.' : `EXHIBIT ${round + 1}. POINT AT THE GUILTY ONE.`, w * 0.15, h * 0.76);
-      ctx.font = '10px "Press Start 2P"';
-      ctx.fillText('Shin-chan: Justice is happening whether the pudding likes it or not.', w * 0.15, h * 0.80);
-      if (picked && round === matchups.length - 1) {
-        ctx.fillStyle = '#ffd44d';
-        ctx.fillText(`Selected: ${picked}`, w * 0.15, h * 0.86);
+      ctx.fillStyle = '#8B6230'; ctx.fillRect(w * 0.79, h * 0.38, 90, 18); ctx.fillRect(w * 0.8, h * 0.4, 8, 24); ctx.fillRect(w * 0.86, h * 0.4, 8, 24);
+      ctx.fillStyle = '#333'; ctx.fillRect(w * 0.795, h * 0.30, 68, 46);
+      ctx.fillStyle = '#444'; ctx.fillRect(w * 0.8, h * 0.305, 58, 36);
+      ctx.fillStyle = '#5A4A8A'; ctx.fillRect(w * 0.805, h * 0.31, 48, 26);
+
+      const tatamiY = h * 0.5;
+      for (let y = tatamiY; y < h; y += 40) {
+        for (let x = 0; x < w; x += 80) {
+          ctx.fillStyle = ((x / 80 + y / 40) % 2 === 0) ? '#C8B878' : '#BFAF70';
+          ctx.fillRect(x, y, 80, 40);
+          ctx.strokeStyle = '#A89858'; ctx.lineWidth = 1; ctx.strokeRect(x, y, 80, 40);
+          ctx.fillStyle = 'rgba(184,168,104,0.3)';
+          for (let ly = y + 4; ly < y + 38; ly += 4) ctx.fillRect(x + 2, ly, 76, 1);
+        }
       }
+      ctx.fillStyle = '#8B6230'; ctx.fillRect(0, tatamiY - 6, w, 6);
+
+      // Banner
+      ctx.save();
+      ctx.translate(w * 0.5, h * 0.16);
+      ctx.rotate(-2 * Math.PI / 180);
+      ctx.fillStyle = '#FFFDE0'; ctx.fillRect(-170, -20, 340, 40);
+      ctx.fillStyle = '#CC2200'; ctx.beginPath(); ctx.arc(-170, -20, 4, 0, Math.PI * 2); ctx.fill(); ctx.beginPath(); ctx.arc(170, -20, 4, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#CC2200'; ctx.font = '6px "Press Start 2P"'; ctx.fillText('COURT OF JUSTICE (shin-chan presiding)', -148, 4);
+      ctx.restore();
+
+      // Judge desk + shin
+      const deskX = w * 0.5 - 60;
+      const deskY = h * 0.44;
+      ctx.fillStyle = '#8B6230'; ctx.fillRect(deskX, deskY, 120, 20);
+      ctx.fillStyle = '#7A5220'; ctx.fillRect(deskX + 8, deskY + 6, 104, 2);
+      ctx.fillStyle = '#CC2200'; ctx.fillRect(deskX + 16, deskY + 5, 8, 3);
+      ctx.fillStyle = '#FFF'; ctx.fillRect(deskX + 34, deskY + 7, 10, 7);
+      ctx.fillStyle = '#FFD700'; ctx.fillRect(deskX + 58, deskY + 4, 10, 12);
+      ctx.fillStyle = '#8B4513'; ctx.fillRect(deskX + 58, deskY + 4, 10, 3);
+
+      const slam = Math.floor(time / 2500) % 2 === 1 && (time % 2500) < 180;
+      const slamOffset = slam ? 4 : 0;
+      if (slam) ctx.save();
+      if (slam) ctx.translate((Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2);
+      ctx.fillStyle = '#ffebc8'; ctx.fillRect(w * 0.49, h * 0.34, 20, 20);
+      ctx.fillStyle = '#111'; ctx.fillRect(w * 0.495, h * 0.345, 4, 4); ctx.fillRect(w * 0.505, h * 0.345, 4, 4);
+      ctx.fillStyle = '#c22'; ctx.fillRect(w * 0.498, h * 0.357, 10, 3);
+      ctx.fillStyle = '#f4cf6b'; ctx.fillRect(w * 0.486, h * 0.36, 28, 16);
+      ctx.fillStyle = '#fff'; ctx.fillRect(w * 0.49, h * 0.376, 4, 15); ctx.fillRect(w * 0.506, h * 0.376, 4, 15);
+      ctx.fillStyle = '#000'; ctx.fillRect(w * 0.492, h * 0.332, 16, 4); ctx.fillRect(w * 0.499, h * 0.328, 2, 4);
+      ctx.fillStyle = '#8B4513'; ctx.fillRect(w * 0.507, h * 0.323 + slamOffset, 2, 20);
+      ctx.fillStyle = '#CC2200'; ctx.fillRect(w * 0.505, h * 0.318 + slamOffset, 6, 6);
+      if (slam) ctx.restore();
+
+      // Transition math
+      const tr = transitionRef.current;
+      let p = 0;
+      if (tr.mode !== 'idle') {
+        p = Math.min(1, (time - tr.start) / 300);
+        if (p >= 1 && tr.mode === 'exit') {
+          roundRef.current = tr.nextRound;
+          beginRound(roundRef.current, time);
+          transitionRef.current = { mode: 'enter', start: time, nextRound: tr.nextRound };
+        } else if (p >= 1 && tr.mode === 'enter') {
+          transitionRef.current = { mode: 'idle', start: 0, nextRound: roundRef.current };
+        }
+      }
+
+      const boardW = Math.min(220, w * 0.24);
+      const boardH = Math.min(180, h * 0.30);
+      const baseY = h * 0.42;
+      const leftBaseX = w * 0.25;
+      const rightBaseX = w * 0.75;
+      let leftX = leftBaseX;
+      let rightX = rightBaseX;
+      if (tr.mode === 'exit') {
+        leftX = leftBaseX - p * (w * 0.5);
+        rightX = rightBaseX + p * (w * 0.5);
+      } else if (tr.mode === 'enter') {
+        leftX = leftBaseX - (1 - p) * (w * 0.5);
+        rightX = rightBaseX + (1 - p) * (w * 0.5);
+      }
+
+      const round = rounds[roundRef.current];
+      const drawBoard = (cx, side, item) => {
+        const hover = hoverRef.current === side;
+        const by = baseY - boardH / 2 + (hover ? -2 : 0);
+        const bx = cx - boardW / 2;
+        boardRectsRef.current[side] = { x: bx, y: by, w: boardW, h: boardH };
+
+        ctx.strokeStyle = '#8B6230'; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.moveTo(cx - boardW * 0.35, by + boardH + 26); ctx.lineTo(cx - boardW * 0.18, by + boardH); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(cx + boardW * 0.35, by + boardH + 26); ctx.lineTo(cx + boardW * 0.18, by + boardH); ctx.stroke();
+
+        ctx.fillStyle = '#FFFDE0'; ctx.fillRect(bx, by, boardW, boardH);
+        ctx.strokeStyle = hover ? '#FFD700' : '#333'; ctx.lineWidth = 3; ctx.strokeRect(bx, by, boardW, boardH);
+        ctx.save();
+        ctx.translate(bx + 12, by + 14);
+        ctx.rotate(3 * Math.PI / 180);
+        ctx.fillStyle = '#CC2200'; ctx.fillRect(0, 0, 84, 18);
+        ctx.fillStyle = '#FFFDE0'; ctx.font = '6px "Press Start 2P"'; ctx.fillText(`EXHIBIT ${roundRef.current + 1 + side}`, 5, 12);
+        ctx.restore();
+
+        if (hover) {
+          ctx.fillStyle = 'rgba(255,255,200,0.15)';
+          ctx.beginPath(); ctx.moveTo(cx, 28); ctx.lineTo(cx - boardW * 0.34, by + boardH); ctx.lineTo(cx + boardW * 0.34, by + boardH); ctx.closePath();
+          ctx.fill();
+        }
+        drawFood(ctx, item.id, cx, by + boardH * 0.56, time);
+
+        if (selectedRef.current === side) {
+          const age = Math.min(1, (time - stampRef.current.start) / 150);
+          const scale = 2 - age;
+          ctx.save();
+          ctx.translate(cx, by + boardH * 0.52);
+          ctx.rotate(-10 * Math.PI / 180);
+          ctx.scale(scale, scale);
+          ctx.fillStyle = 'rgba(204,34,0,0.88)'; ctx.fillRect(-40, -14, 80, 28);
+          ctx.strokeStyle = '#8B0000'; ctx.strokeRect(-40, -14, 80, 28);
+          ctx.fillStyle = '#FFF'; ctx.font = '9px "Press Start 2P"'; ctx.fillText('GUILTY', -28, 6);
+          ctx.restore();
+        }
+
+        if (flashUntilRef.current > time && selectedRef.current === side) {
+          ctx.fillStyle = 'rgba(255,255,255,0.45)';
+          ctx.fillRect(bx, by, boardW, boardH);
+        }
+      };
+
+      drawBoard(leftX, 0, round.left);
+      drawBoard(rightX, 1, round.right);
+
+      // Round badge
+      ctx.fillStyle = 'rgba(20,16,8,0.9)'; ctx.fillRect(w - 170, 24, 146, 34);
+      ctx.strokeStyle = '#FFD700'; ctx.strokeRect(w - 170, 24, 146, 34);
+      ctx.fillStyle = '#FFD700'; ctx.font = '8px "Press Start 2P"'; ctx.fillText(`ROUND ${roundRef.current + 1} / ${rounds.length}`, w - 160, 45);
+
+      // Hover label
+      if (hoverRef.current >= 0 && labelRef.current.full) {
+        if (time >= labelRef.current.nextAt && labelRef.current.shown.length < labelRef.current.full.length) {
+          labelRef.current.shown = labelRef.current.full.slice(0, labelRef.current.shown.length + 1);
+          labelRef.current.nextAt = time + 30;
+        }
+        ctx.fillStyle = '#FFD700'; ctx.font = '7px "Press Start 2P"';
+        ctx.fillText(labelRef.current.shown, w * 0.33, h * 0.67);
+      }
+
+      // Dialogue typing
+      if (time >= dialogueRef.current.nextAt && dialogueRef.current.shown.length < dialogueRef.current.full.length) {
+        dialogueRef.current.shown = dialogueRef.current.full.slice(0, dialogueRef.current.shown.length + 1);
+        dialogueRef.current.nextAt = time + 16;
+      }
+      dialogueRef.current.done = dialogueRef.current.shown.length >= dialogueRef.current.full.length;
+
+      const boxX = 16;
+      const boxY = h - 100;
+      const boxW = w - 32;
+      const boxH = 84;
+      ctx.fillStyle = 'rgba(10,10,30,0.93)'; ctx.fillRect(boxX, boxY, boxW, boxH);
+      ctx.strokeStyle = '#FFF'; ctx.lineWidth = 2; ctx.strokeRect(boxX, boxY, boxW, boxH);
+      ctx.strokeStyle = '#333355'; ctx.lineWidth = 1; ctx.strokeRect(boxX + 4, boxY + 4, boxW - 8, boxH - 8);
+      ctx.fillStyle = '#ffebc8'; ctx.fillRect(boxX + 12, boxY + 20, 16, 16);
+      ctx.fillStyle = '#111'; ctx.fillRect(boxX + 15, boxY + 24, 3, 3); ctx.fillRect(boxX + 22, boxY + 24, 3, 3);
+      ctx.fillStyle = '#c22'; ctx.fillRect(boxX + 16, boxY + 30, 8, 2);
+      ctx.fillStyle = '#FFD700'; ctx.font = '7px "Press Start 2P"'; ctx.fillText('Shin-chan:', boxX + 34, boxY + 30);
+      ctx.fillStyle = '#FFF'; ctx.font = '7px "Press Start 2P"'; wrapCanvasText(ctx, dialogueRef.current.shown, boxX + 80, boxY + 28, boxW - 96, 12);
+      if (dialogueRef.current.done && Math.floor(time / 400) % 2 === 0) ctx.fillText('v', boxX + boxW - 18, boxY + boxH - 10);
     };
-    render();
+
+    frameId = requestAnimationFrame(render);
     return () => {
       cancelAnimationFrame(frameId);
       window.removeEventListener('resize', resize);
-      canvas.removeEventListener('pointermove', updateHover);
+      canvas.removeEventListener('pointermove', handleMove);
       canvas.removeEventListener('pointerdown', handleClick);
+      canvas.style.cursor = 'default';
     };
-  }, [round, hoverSide, picked, onFinish]);
+  }, [onFinish]);
 
   return <canvas ref={canvasRef} className="interior-canvas" />;
 }
@@ -779,289 +1046,383 @@ function ParkGame({ onFinish }) {
 
 function KindergartenGame({ onFinish }) {
   const canvasRef = useRef(null);
-  const rafRef = useRef(0);
-  const doneRef = useRef(false);
+  const audioCtxRef = useRef(null);
   const optionRectsRef = useRef([]);
-  const [currentQuestion, setCurrentQuestion] = useState(0);
-  const [answers, setAnswers] = useState([]);
-  const [reaction, setReaction] = useState("I am sensei now. Sit down. This is a real exam. I made it. It counts.");
+  const hoverRef = useRef(-1);
+  const selectedRef = useRef({ index: -1, start: 0 });
+  const eraserRef = useRef({ active: false, start: 0 });
+  const qIndexRef = useRef(0);
+  const answersRef = useRef([]);
+  const doneRef = useRef(false);
+  const lookAtClassRef = useRef(0);
+  const pointerRaiseRef = useRef(-1);
+  const boardTextRef = useRef({ full: '', shown: '', nextAt: 0 });
+  const dialogueRef = useRef({ full: 'I am sensei now. Sit down. This exam is real.', shown: '', nextAt: 0 });
 
   const questions = [
     {
-      prompt: "I found a crumpled diary page under Yoshinaga-sensei's desk. It says someone disappeared for 3 days then came back like nothing happened. Class, that means:",
+      prompt: 'Diary page one says someone vanished for three days then returned smiling. What did Yoshinaga-sensei think?',
       options: [
         { id: 'A', text: 'She was deeply suspicious' },
-        { id: 'B', text: 'She stayed polite and said nothing' },
-        { id: 'C', text: 'She made a note for later' },
-        { id: 'D', text: 'She absolutely did not forget' },
+        { id: 'B', text: 'She stayed polite and quiet' },
+        { id: 'C', text: 'She kept the evidence' },
+        { id: 'D', text: 'She did not forget that' }
       ],
-      reactions: {
-        A: 'Yes. Very educational. The class has learned fear.',
-        B: 'Polite, but cowardly. Yoshinaga-sensei would understand.',
-        C: 'Excellent. Evidence must be filed immediately.',
-        D: 'That is the kind of memory that becomes a problem later.',
-      },
+      reactions: { A: 'Correct. Suspicion level maximum.', B: 'Polite answer, risky outcome.', C: 'Evidence filing wins points.', D: 'Exactly. Memory never forgets.' }
     },
     {
-      prompt: "The diary says a man said something important, then went silent for weeks. Yoshinaga-sensei probably thought:",
+      prompt: 'The diary says a boy confessed and then disappeared for weeks. The class concludes:',
       options: [
-        { id: 'A', text: 'This is very suspicious' },
-        { id: 'B', text: 'He is scared and needs time' },
-        { id: 'C', text: 'I should probably move on' },
-        { id: 'D', text: 'Why is this sounding familiar' },
+        { id: 'A', text: 'That is suspicious' },
+        { id: 'B', text: 'He got scared and hid' },
+        { id: 'C', text: 'She should move on' },
+        { id: 'D', text: 'This sounds familiar' }
       ],
-      reactions: {
-        A: 'Reasonable. The classroom approves.',
-        B: 'A very generous reading. Dangerous, but kind.',
-        C: 'Cold. Efficient. Slightly heartbreaking.',
-        D: 'Okay. We are all pretending this is normal.',
-      },
+      reactions: { A: 'Reasonable. Jury approved.', B: 'Generous reading.', C: 'Cold but valid.', D: 'You noticed too much.' }
     },
     {
-      prompt: 'Under the coffee stain, the diary asks what a perfect day off looks like. Yoshinaga-sensei would choose:',
+      prompt: 'Question three: perfect day off according to the notes is probably:',
       options: [
-        { id: 'A', text: 'Quiet drive and music' },
-        { id: 'B', text: 'Coffee and absolutely nothing else' },
-        { id: 'C', text: 'A random adventure' },
-        { id: 'D', text: 'Stay home and recover' },
+        { id: 'A', text: 'A calm drive with music' },
+        { id: 'B', text: 'Coffee and silence' },
+        { id: 'C', text: 'Random no-plan adventure' },
+        { id: 'D', text: 'Staying home and recovering' }
       ],
-      reactions: {
-        A: 'Very grounded. Very adult. Very believable.',
-        B: 'Relatable. Probably too relatable.',
-        C: 'That is the correct amount of chaos.',
-        D: 'A sane answer. Suspiciously sane.',
-      },
+      reactions: { A: 'Grounded answer.', B: 'Quiet power.', C: 'Chaos accepted.', D: 'Sane answer.' }
     },
     {
-      prompt: "The next line says: 'At 11pm when I cannot sleep I...' Shin-chan says the correct answer is:",
+      prompt: 'At 11 PM when sleep refuses to happen, the probable move is:',
       options: [
-        { id: 'A', text: 'Scrolling forever' },
-        { id: 'B', text: 'Texting someone back' },
-        { id: 'C', text: 'Starting a new show' },
-        { id: 'D', text: 'Actually sleeping' },
+        { id: 'A', text: 'Scroll forever' },
+        { id: 'B', text: 'Reply to one text' },
+        { id: 'C', text: 'Start one episode' },
+        { id: 'D', text: 'Actually sleep' }
       ],
-      reactions: {
-        A: 'Yes. Suspicious screen glow. Very guilty.',
-        B: 'Dangerous and honest. I respect that.',
-        C: 'A classic mistake. The kind of mistake that becomes a timeline.',
-        D: 'A rare and noble choice. Almost unbelievable.',
-      },
+      reactions: { A: 'Screen glow is guilty.', B: 'Honest and risky.', C: 'Classic mistake.', D: 'Rare noble move.' }
     },
     {
-      prompt: "One line says someone remembered a tiny thing from long ago. Yoshinaga-sensei probably felt:",
+      prompt: 'Someone remembered a tiny detail from long ago. That feeling is:',
       options: [
         { id: 'A', text: 'Extremely seen' },
         { id: 'B', text: 'A little famous' },
         { id: 'C', text: 'Confused but happy' },
-        { id: 'D', text: 'Fine, but only a little' },
+        { id: 'D', text: 'Fine maybe a little' }
       ],
-      reactions: {
-        A: 'That is the exact kind of reaction this diary would cause.',
-        B: 'Shin-chan calls that: success.',
-        C: 'Good. We are being emotionally honest now.',
-        D: 'Sure. If you say so. Everyone saw through that.',
-      },
+      reactions: { A: 'That hit direct.', B: 'Famous mode on.', C: 'Honest answer.', D: 'Nobody believes that.' }
     },
     {
-      prompt: "The diary asks for an ideal Saturday. Shin-chan immediately adds: 'Mine is Action Kamen. Every Saturday. Non-negotiable.' Yoshinaga-sensei's answer is:",
+      prompt: 'Ideal Saturday according to the evidence board:',
       options: [
-        { id: 'A', text: 'Out all day' },
-        { id: 'B', text: 'Half out, half in' },
-        { id: 'C', text: 'Home doing stuff' },
-        { id: 'D', text: 'Couch mode' },
+        { id: 'A', text: 'Outside all day' },
+        { id: 'B', text: 'Half out half home' },
+        { id: 'C', text: 'Home and chores' },
+        { id: 'D', text: 'Couch mode forever' }
       ],
-      reactions: {
-        A: 'Very energetic. Slightly unhinged. Fair.',
-        B: 'Balanced. Human. Acceptable.',
-        C: 'Responsible. I suppose that counts.',
-        D: 'Honestly? Respect.',
-      },
+      reactions: { A: 'High stamina.', B: 'Balanced strategy.', C: 'Responsible pick.', D: 'Realistic champion.' }
     },
     {
-      prompt: "The last diary line says: 'When I see someone I know in public I...' Shin-chan blurts: 'I run at them full speed.' The class chooses:",
+      prompt: 'Final: when you see someone familiar in public, instinct is:',
       options: [
         { id: 'A', text: 'Run up immediately' },
-        { id: 'B', text: 'Wait for them to notice me' },
-        { id: 'C', text: 'Pretend I did not see them' },
-        { id: 'D', text: 'Text "I see you"' },
+        { id: 'B', text: 'Wait for eye contact' },
+        { id: 'C', text: 'Pretend not to see' },
+        { id: 'D', text: 'Text I SEE YOU' }
       ],
-      reactions: {
-        A: 'Shin-chan approved. No hesitation.',
-        B: 'Classic survival strategy. Fair.',
-        C: 'Expert-level stealth. Respect.',
-        D: 'That is unreasonably funny.',
-      },
-    },
+      reactions: { A: 'No hesitation approved.', B: 'Classic safe strategy.', C: 'Stealth expert answer.', D: 'Ridiculously funny.' }
+    }
   ];
 
-  const selectAnswer = useCallback((choiceIndex) => {
-    if (doneRef.current) return;
-    const question = questions[currentQuestion];
-    const choice = question?.options[choiceIndex];
-    if (!choice) return;
-
-    setAnswers(prev => {
-      const nextAnswers = [...prev, choice.id];
-      if (currentQuestion === questions.length - 1) {
-        doneRef.current = true;
-        setReaction('Yoshinaga-sensei walked back in. Shin-chan quietly became a lamp.');
-        window.setTimeout(() => onFinish({ quizAnswers: nextAnswers }), 700);
-      } else {
-        setReaction(question.reactions[choice.id]);
-      }
-      return nextAnswers;
-    });
-
-    if (currentQuestion < questions.length - 1) {
-      setCurrentQuestion(q => q + 1);
+  const ensureAudio = () => {
+    if (!audioCtxRef.current) {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (Ctx) audioCtxRef.current = new Ctx();
     }
-  }, [currentQuestion, onFinish, questions]);
+    return audioCtxRef.current;
+  };
+
+  const playScratch = () => {
+    const audio = ensureAudio();
+    if (!audio) return;
+    const buffer = audio.createBuffer(1, Math.floor(audio.sampleRate * 0.03), audio.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < data.length; i += 1) data[i] = (Math.random() * 2 - 1) * (1 - i / data.length);
+    const src = audio.createBufferSource();
+    const gain = audio.createGain();
+    gain.gain.value = 0.03;
+    src.buffer = buffer;
+    src.connect(gain).connect(audio.destination);
+    src.start();
+  };
+
+  const setDialogue = (text, now) => {
+    dialogueRef.current = { full: text, shown: '', nextAt: now };
+  };
+
+  const setQuestionText = (now) => {
+    const q = questions[qIndexRef.current];
+    boardTextRef.current = { full: q.prompt, shown: '', nextAt: now };
+  };
+
+  const selectAnswer = useCallback((idx) => {
+    if (doneRef.current || eraserRef.current.active || selectedRef.current.index !== -1) return;
+    const q = questions[qIndexRef.current];
+    const option = q.options[idx];
+    if (!option) return;
+
+    selectedRef.current = { index: idx, start: performance.now() };
+    pointerRaiseRef.current = idx;
+    lookAtClassRef.current = performance.now() + 700;
+    answersRef.current.push(option.id);
+    setDialogue(q.reactions[option.id], performance.now());
+
+    if (qIndexRef.current === questions.length - 1) {
+      doneRef.current = true;
+      window.setTimeout(() => onFinish({ quizAnswers: answersRef.current }), 1300);
+      return;
+    }
+
+    window.setTimeout(() => {
+      eraserRef.current = { active: true, start: performance.now() };
+    }, 800);
+  }, [onFinish]);
 
   useEffect(() => {
-    const handleKeyDown = (event) => {
-      if (doneRef.current) return;
+    const onKeyDown = (event) => {
       if (event.key === '1' || event.key === 'a' || event.key === 'A') selectAnswer(0);
       else if (event.key === '2' || event.key === 'b' || event.key === 'B') selectAnswer(1);
       else if (event.key === '3' || event.key === 'c' || event.key === 'C') selectAnswer(2);
       else if (event.key === '4' || event.key === 'd' || event.key === 'D') selectAnswer(3);
     };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
   }, [selectAnswer]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+    const ctx = canvas.getContext('2d', { alpha: false });
+    if (!ctx) return;
 
     const resize = () => {
       canvas.width = window.innerWidth;
       canvas.height = window.innerHeight;
+      ctx.imageSmoothingEnabled = false;
     };
 
-    const ctx = canvas.getContext('2d', { alpha: false });
-    let frameId = 0;
-    const drawDesk = (x, y, width, height, color) => {
-      ctx.fillStyle = color;
-      ctx.fillRect(x, y, width, height);
-      ctx.fillStyle = '#7a4f28';
-      ctx.fillRect(x + 6, y + height, 4, 20);
-      ctx.fillRect(x + width - 10, y + height, 4, 20);
-    };
-
-    const render = () => {
-      frameId = requestAnimationFrame(render);
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-      const { width, height } = canvas;
-      ctx.fillStyle = '#d7c18f';
-      ctx.fillRect(0, 0, width, height);
-
-      for (let y = 0; y < height; y += 32) {
-        for (let x = 0; x < width; x += 32) {
-          ctx.fillStyle = (Math.floor(x / 32) + Math.floor(y / 32)) % 2 === 0 ? '#ccb37b' : '#d7c18f';
-          ctx.fillRect(x, y, 32, 32);
-          ctx.fillStyle = 'rgba(255,255,255,0.08)';
-          ctx.fillRect(x + 2, y + 2, 2, 2);
-        }
-      }
-
-      ctx.fillStyle = '#8f5f33';
-      ctx.fillRect(0, 0, width, 56);
-      ctx.fillStyle = '#d8edf8';
-      ctx.fillRect(40, 16, width - 80, 20);
-      ctx.fillStyle = '#3c5f31';
-      ctx.fillRect(width * 0.24, 72, width * 0.52, 126);
-      ctx.fillStyle = '#244524';
-      ctx.fillRect(width * 0.26, 84, width * 0.48, 102);
-      ctx.fillStyle = '#f0d9a3';
-      ctx.fillRect(width * 0.26, 88, width * 0.48, 94);
-
-      ctx.fillStyle = '#1e1e1e';
-      ctx.fillRect(width * 0.31, 104, width * 0.28, 52);
-      ctx.fillStyle = '#4a7a45';
-      ctx.fillRect(width * 0.32, 108, width * 0.26, 36);
-      ctx.fillStyle = '#ffffff';
-      ctx.font = '20px "Press Start 2P"';
-      ctx.fillText('EXAM', width * 0.37, 132);
-
-      drawDesk(width * 0.18, height * 0.55, 110, 28, '#9b6a3b');
-      drawDesk(width * 0.40, height * 0.62, 110, 28, '#8e5f33');
-      drawDesk(width * 0.67, height * 0.55, 110, 28, '#9b6a3b');
-
-      ctx.fillStyle = '#6a4625';
-      ctx.fillRect(width * 0.12, height * 0.28, width * 0.16, 18);
-      ctx.fillRect(width * 0.72, height * 0.28, width * 0.16, 18);
-
-      ctx.fillStyle = '#ffffff';
-      ctx.font = '18px "Press Start 2P"';
-      ctx.fillText('Futaba Kindergarten', 24, 32);
-      ctx.font = '14px "Press Start 2P"';
-      ctx.fillText(`Question ${currentQuestion + 1} / ${questions.length}`, width - 320, 32);
-
-      const boardX = width * 0.14;
-      const boardY = height * 0.48;
-      const boardW = width * 0.72;
-      const cardW = (boardW - 18) / 2;
-      const cardH = 86;
-      optionRectsRef.current = [];
-      current?.options.forEach((option, index) => {
-        const col = index % 2;
-        const row = Math.floor(index / 2);
-        const x = boardX + col * (cardW + 18);
-        const y = boardY + row * (cardH + 16);
-        optionRectsRef.current.push({ x, y, w: cardW, h: cardH, index });
-        ctx.fillStyle = '#f7f5ea';
-        ctx.fillRect(x, y, cardW, cardH);
-        ctx.strokeStyle = '#1f2937';
-        ctx.lineWidth = 3;
-        ctx.strokeRect(x, y, cardW, cardH);
-        ctx.fillStyle = '#1a1a1a';
-        ctx.font = '12px "Press Start 2P"';
-        ctx.fillText(`${option.id})`, x + 12, y + 22);
-        ctx.font = '11px "Press Start 2P"';
-        wrapCanvasText(ctx, option.text, x + 12, y + 46, cardW - 24, 18);
-      });
-
-      ctx.fillStyle = 'rgba(7, 15, 28, 0.88)';
-      ctx.fillRect(width * 0.12, height * 0.78, width * 0.76, 84);
-      ctx.strokeStyle = '#ffffff';
-      ctx.strokeRect(width * 0.12, height * 0.78, width * 0.76, 84);
-      ctx.fillStyle = '#ffffff';
-      ctx.font = '12px "Press Start 2P"';
-      wrapCanvasText(ctx, `Shin-chan: ${reaction}`, width * 0.14, height * 0.82, width * 0.72, 18);
-      ctx.font = '10px "Press Start 2P"';
-      ctx.fillStyle = '#ffd44d';
-      ctx.fillText('CLICK THE CARDS. THIS IS FOR THE CLASS.', width * 0.14, height * 0.91);
-    };
-
-    resize();
-    window.addEventListener('resize', resize);
-    render();
-
-    const handlePointer = (event) => {
-      if (doneRef.current) return;
+    const handleMove = (event) => {
       const rect = canvas.getBoundingClientRect();
       const x = event.clientX - rect.left;
       const y = event.clientY - rect.top;
-      const hit = optionRectsRef.current.find(area => x >= area.x && x <= area.x + area.w && y >= area.y && y <= area.y + area.h);
-      if (hit) selectAnswer(hit.index);
+      const hit = optionRectsRef.current.findIndex(r => x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h);
+      hoverRef.current = hit;
+      canvas.style.cursor = hit >= 0 ? 'pointer' : 'default';
+      if (hit >= 0) lookAtClassRef.current = performance.now() + 450;
     };
 
-    canvas.addEventListener('pointerdown', handlePointer);
+    const handleClick = (event) => {
+      const rect = canvas.getBoundingClientRect();
+      const x = event.clientX - rect.left;
+      const y = event.clientY - rect.top;
+      const hit = optionRectsRef.current.findIndex(r => x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h);
+      if (hit >= 0) selectAnswer(hit);
+    };
 
+    resize();
+    setQuestionText(performance.now());
+    window.addEventListener('resize', resize);
+    canvas.addEventListener('pointermove', handleMove);
+    canvas.addEventListener('pointerdown', handleClick);
+
+    let frameId = 0;
+    const render = (time) => {
+      frameId = requestAnimationFrame(render);
+      const w = canvas.width;
+      const h = canvas.height;
+      ctx.clearRect(0, 0, w, h);
+
+      const wallBottom = Math.floor(h * 0.55);
+      ctx.fillStyle = '#E8D5A3'; ctx.fillRect(0, 0, w, wallBottom);
+      ctx.fillStyle = '#D4B896'; ctx.fillRect(0, 0, w, 20);
+      ctx.fillStyle = '#555'; ctx.fillRect(Math.floor(w * 0.5) - 1, 20, 2, 20);
+      ctx.fillStyle = '#FFE87A'; ctx.fillRect(Math.floor(w * 0.5) - 10, 40, 20, 10);
+      const glow = ctx.createRadialGradient(w * 0.5, 50, 8, w * 0.5, 110, 160);
+      glow.addColorStop(0, 'rgba(255,232,122,0.22)'); glow.addColorStop(1, 'rgba(255,232,122,0)');
+      ctx.fillStyle = glow; ctx.fillRect(w * 0.5 - 180, 20, 360, 200);
+
+      for (let y = wallBottom; y < h; y += 16) {
+        const plank = Math.floor((y - wallBottom) / 16);
+        ctx.fillStyle = plank % 2 === 0 ? '#C4935A' : '#B8864E';
+        ctx.fillRect(0, y, w, 16);
+        ctx.fillStyle = '#7A5535'; ctx.fillRect(0, y + 15, w, 1);
+      }
+      ctx.fillStyle = '#8B6230'; ctx.fillRect(0, wallBottom - 4, w, 4);
+
+      // Header sign
+      ctx.fillStyle = '#333';
+      for (let y = 0; y < 16; y += 2) {
+        ctx.fillRect(140, y, 2, 2); ctx.fillRect(142, y + 1, 2, 2);
+        ctx.fillRect(w - 144, y, 2, 2); ctx.fillRect(w - 142, y + 1, 2, 2);
+      }
+      ctx.fillStyle = '#8B6230'; ctx.fillRect(96, 16, w - 192, 34);
+      ctx.fillStyle = '#7A5220'; for (let gy = 18; gy < 48; gy += 8) ctx.fillRect(100, gy, w - 200, 1);
+      ctx.fillStyle = '#FFE87A'; ctx.font = '8px "Press Start 2P"'; ctx.fillText('FUTABA KINDERGARTEN', w * 0.5 - 118, 38);
+      ctx.fillStyle = '#CC2200'; ctx.fillRect(110, 28, 8, 8); ctx.fillRect(118, 30, 6, 6);
+      ctx.fillStyle = '#2D8A2D'; ctx.fillRect(116, 24, 4, 3);
+      ctx.fillStyle = '#8B4513'; ctx.fillRect(114, 22, 2, 3);
+      ctx.fillStyle = '#FFFDE0'; ctx.font = '7px "Press Start 2P"'; ctx.fillText(`Q ${qIndexRef.current + 1}/${questions.length}`, w - 176, 37);
+
+      // Blackboard
+      const boardX = w * 0.2;
+      const boardY = h * 0.05;
+      const boardW = w * 0.6;
+      const boardH = h * 0.32;
+      ctx.fillStyle = '#8B6230'; ctx.fillRect(boardX - 8, boardY - 8, boardW + 16, boardH + 16);
+      ctx.fillStyle = '#2D5A27'; ctx.fillRect(boardX, boardY, boardW, boardH);
+      ctx.fillStyle = '#A0785A'; ctx.fillRect(boardX, boardY + boardH - 6, boardW, 6);
+      for (let i = 0; i < 4; i += 1) { ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.fillRect(boardX + 30 + i * (boardW / 5), boardY + boardH - 4, 4, 2); }
+
+      if (eraserRef.current.active) {
+        const p = Math.min(1, (time - eraserRef.current.start) / 300);
+        ctx.fillStyle = `rgba(255,255,255,${0.25 + 0.35 * (1 - p)})`;
+        ctx.fillRect(boardX + p * (boardW - 30), boardY + 12, 28, boardH - 28);
+        if (p >= 1) {
+          eraserRef.current.active = false;
+          qIndexRef.current += 1;
+          selectedRef.current = { index: -1, start: 0 };
+          pointerRaiseRef.current = -1;
+          setQuestionText(time);
+          setDialogue('Next question. No cheating. I can see everyone.', time);
+        }
+      }
+
+      if (!eraserRef.current.active && boardTextRef.current.shown.length < boardTextRef.current.full.length && time >= boardTextRef.current.nextAt) {
+        boardTextRef.current.shown = boardTextRef.current.full.slice(0, boardTextRef.current.shown.length + 1);
+        boardTextRef.current.nextAt = time + 27;
+        playScratch();
+      }
+      ctx.fillStyle = '#FFFDE0'; ctx.font = '9px "Press Start 2P"';
+      wrapCanvasText(ctx, boardTextRef.current.shown, boardX + 20, boardY + 34, boardW - 40, 16);
+      ctx.font = '7px "Press Start 2P"'; ctx.fillText(`Q ${qIndexRef.current + 1}/${questions.length}`, boardX + boardW - 70, boardY + 20);
+
+      // Desks
+      const drawDesk = (x, y, scale) => {
+        const dw = 40 * scale;
+        const dh = 20 * scale;
+        ctx.fillStyle = '#C4935A'; ctx.fillRect(x, y, dw, dh);
+        ctx.fillStyle = '#8B6230'; ctx.fillRect(x, y + dh, 2 * scale, 16 * scale); ctx.fillRect(x + dw - 2 * scale, y + dh, 2 * scale, 16 * scale);
+        ctx.fillStyle = '#EEEEEE'; ctx.fillRect(x + 6 * scale, y + 4 * scale, 8 * scale, 6 * scale);
+        ctx.fillStyle = '#AACCFF'; ctx.fillRect(x + 6 * scale, y + 6 * scale, 8 * scale, 1 * scale); ctx.fillRect(x + 6 * scale, y + 8 * scale, 8 * scale, 1 * scale);
+        ctx.fillStyle = '#CC2200'; ctx.fillRect(x + 18 * scale, y + 6 * scale, 4 * scale, 2 * scale);
+      };
+      const rows = [{ y: h * 0.55, s: 0.8 }, { y: h * 0.65, s: 0.9 }, { y: h * 0.75, s: 1.0 }];
+      rows.forEach(row => {
+        const spread = w * 0.7;
+        const startX = (w - spread) / 2;
+        for (let i = 0; i < 4; i += 1) drawDesk(startX + i * (spread / 3) - 20 * row.s, row.y, row.s);
+      });
+
+      // Shin sprite and pointer
+      const shinX = w * 0.15;
+      const shinY = h * 0.42;
+      const faceClass = time < lookAtClassRef.current;
+      const tapFrame = Math.floor(time / 2000) % 2;
+      const pointerAngle = pointerRaiseRef.current >= 0 ? -0.55 : (tapFrame ? -0.08 : 0.02);
+      if (SPRITEMAP.shin_idle1 && SPRITEMAP.shin_idle1.complete) {
+        ctx.save();
+        if (!faceClass) {
+          ctx.translate(shinX + 48, shinY);
+          ctx.scale(-1, 1);
+          ctx.drawImage(SPRITEMAP.shin_idle1, 0, 0, 16, 16, 0, 0, 48, 48);
+        } else {
+          ctx.drawImage(SPRITEMAP.shin_idle1, 0, 0, 16, 16, shinX, shinY, 48, 48);
+        }
+        ctx.restore();
+      } else {
+        ctx.fillStyle = '#ffebc8'; ctx.fillRect(shinX + 10, shinY + 6, 24, 24);
+        ctx.fillStyle = '#f4cf6b'; ctx.fillRect(shinX + 6, shinY + 28, 32, 16);
+      }
+      ctx.save();
+      ctx.translate(shinX + 30, shinY + 24);
+      ctx.rotate(pointerAngle);
+      ctx.fillStyle = '#8B4513';
+      ctx.fillRect(0, 0, 20, 1);
+      ctx.restore();
+
+      // Answer cards
+      const q = questions[Math.min(qIndexRef.current, questions.length - 1)];
+      const cardW = w * 0.38;
+      const cardH = h * 0.13;
+      const gapX = w * 0.04;
+      const gapY = h * 0.03;
+      const gridW = cardW * 2 + gapX;
+      const gridX = (w - gridW) / 2;
+      const gridY = h * 0.54;
+      optionRectsRef.current = [];
+      q.options.forEach((option, index) => {
+        const col = index % 2;
+        const row = Math.floor(index / 2);
+        const x = gridX + col * (cardW + gapX);
+        const y = gridY + row * (cardH + gapY);
+        const hover = hoverRef.current === index;
+        const clickAge = selectedRef.current.index === index ? time - selectedRef.current.start : 9999;
+        const flash = clickAge >= 0 && clickAge < 80;
+        const yShift = hover ? -3 : 0;
+        optionRectsRef.current.push({ x, y: y + yShift, w: cardW, h: cardH });
+
+        ctx.fillStyle = flash ? '#FFFFFF' : '#FFFDE0'; ctx.fillRect(x, y + yShift, cardW, cardH);
+        ctx.strokeStyle = hover ? '#CC2200' : '#333333'; ctx.lineWidth = 2; ctx.strokeRect(x, y + yShift, cardW, cardH);
+        ctx.fillStyle = '#E8D4A0'; ctx.beginPath(); ctx.moveTo(x + cardW - 14, y + yShift); ctx.lineTo(x + cardW, y + yShift); ctx.lineTo(x + cardW, y + yShift + 14); ctx.closePath(); ctx.fill();
+        ctx.fillStyle = '#CC2200'; ctx.font = '10px "Press Start 2P"'; ctx.fillText(option.id, x + 8, y + yShift + 16);
+        if (hover && Math.floor(time / 250) % 2 === 0) ctx.fillText('*', x + 22, y + yShift + 16);
+        ctx.fillStyle = '#1A1A1A'; ctx.font = '7px "Press Start 2P"'; wrapCanvasText(ctx, option.text, x + 10, y + yShift + 34, cardW - 20, 12);
+
+        if (selectedRef.current.index === index && clickAge > 60) {
+          const p = Math.min(1, (clickAge - 60) / 220);
+          ctx.strokeStyle = '#CC2200'; ctx.lineWidth = 3;
+          ctx.beginPath(); ctx.moveTo(x + 16, y + yShift + cardH * 0.58);
+          if (p < 0.45) {
+            const t = p / 0.45;
+            ctx.lineTo(x + 16 + 12 * t, y + yShift + cardH * 0.58 + 12 * t);
+          } else {
+            ctx.lineTo(x + 28, y + yShift + cardH * 0.70);
+            const t = (p - 0.45) / 0.55;
+            ctx.lineTo(x + 28 + 24 * t, y + yShift + cardH * 0.70 - 22 * t);
+          }
+          ctx.stroke();
+        }
+      });
+
+      // Dialogue box
+      if (dialogueRef.current.shown.length < dialogueRef.current.full.length && time >= dialogueRef.current.nextAt) {
+        dialogueRef.current.shown = dialogueRef.current.full.slice(0, dialogueRef.current.shown.length + 1);
+        dialogueRef.current.nextAt = time + 16;
+      }
+      const boxX = 16;
+      const boxY = h - 100;
+      const boxW = w - 32;
+      const boxH = 84;
+      ctx.fillStyle = 'rgba(10,10,30,0.93)'; ctx.fillRect(boxX, boxY, boxW, boxH);
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.strokeRect(boxX, boxY, boxW, boxH);
+      ctx.strokeStyle = '#333355'; ctx.lineWidth = 1; ctx.strokeRect(boxX + 4, boxY + 4, boxW - 8, boxH - 8);
+      ctx.fillStyle = '#ffebc8'; ctx.fillRect(boxX + 12, boxY + 18, 16, 16);
+      ctx.fillStyle = '#111'; ctx.fillRect(boxX + 15, boxY + 22, 3, 3); ctx.fillRect(boxX + 22, boxY + 22, 3, 3);
+      ctx.fillStyle = '#CC2200'; ctx.fillRect(boxX + 16, boxY + 29, 8, 2);
+      ctx.fillStyle = '#FFD700'; ctx.font = '7px "Press Start 2P"'; ctx.fillText('Shin-chan:', boxX + 34, boxY + 28);
+      ctx.fillStyle = '#FFF'; ctx.font = '7px "Press Start 2P"'; wrapCanvasText(ctx, dialogueRef.current.shown, boxX + 80, boxY + 28, boxW - 98, 12);
+      if (dialogueRef.current.shown.length >= dialogueRef.current.full.length && Math.floor(time / 400) % 2 === 0) ctx.fillText('v', boxX + boxW - 18, boxY + boxH - 10);
+    };
+
+    frameId = requestAnimationFrame(render);
     return () => {
       cancelAnimationFrame(frameId);
       window.removeEventListener('resize', resize);
-      canvas.removeEventListener('pointerdown', handlePointer);
+      canvas.removeEventListener('pointermove', handleMove);
+      canvas.removeEventListener('pointerdown', handleClick);
+      canvas.style.cursor = 'default';
     };
-  }, [currentQuestion, reaction, answers]);
+  }, [onFinish, selectAnswer]);
 
-  const current = questions[currentQuestion];
-
-  return (
-    <canvas ref={canvasRef} className="interior-canvas" />
-  );
+  return <canvas ref={canvasRef} className="interior-canvas" />;
 }
 
 function TheaterGame({ onFinish }) {
