@@ -55,12 +55,13 @@ function wrapCanvasText(ctx, text, x, y, maxWidth, lineHeight) {
 }
 
 export default function App() {
+  const theaterScoreKey = 'schinChanTheaterScore';
   const [gameState, setGameState] = useState('intro');
   const [completedGames, setCompletedGames] = useState({ house: false, park: false, kindergarten: false, theater: false });
   const [profile, setProfile] = useState(() => {
     let savedScore = null;
     try {
-      const raw = window.localStorage.getItem('girlfriendQuestTheaterScore');
+      const raw = window.localStorage.getItem(theaterScoreKey);
       if (raw != null && raw !== '') {
         const parsed = Number(raw);
         if (Number.isFinite(parsed) && parsed > 0) savedScore = Math.floor(parsed);
@@ -77,7 +78,7 @@ export default function App() {
   const exitBuilding = useCallback((buildingId, profileData = {}) => {
     if (typeof profileData.theaterScore === 'number' && Number.isFinite(profileData.theaterScore)) {
       try {
-        window.localStorage.setItem('girlfriendQuestTheaterScore', String(Math.max(0, Math.floor(profileData.theaterScore))));
+        window.localStorage.setItem(theaterScoreKey, String(Math.max(0, Math.floor(profileData.theaterScore))));
       } catch {}
     }
     setProfile(prev => ({ ...prev, ...profileData }));
@@ -191,6 +192,25 @@ function GameCanvas({
   const wipeTarget = useRef(null);
   const wipeProg = useRef(0);
   const [readySlide, setReadySlide] = useState(false);
+  const [isTouchDevice, setIsTouchDevice] = useState(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false;
+    return window.matchMedia('(hover: none), (pointer: coarse)').matches;
+  });
+
+  const setDirectionKey = useCallback((event, key, pressed) => {
+    event.preventDefault();
+    keys.current[key] = pressed;
+  }, []);
+
+  const triggerConfirm = useCallback((event) => {
+    event.preventDefault();
+    keys.current[' '] = true;
+  }, []);
+
+  const triggerCancel = useCallback((event) => {
+    event.preventDefault();
+    keys.current['Escape'] = true;
+  }, []);
 
   useEffect(() => {
     const handleResize = () => {
@@ -200,17 +220,29 @@ function GameCanvas({
       }
     };
 
+    const coarsePointer = window.matchMedia('(pointer: coarse)');
+    const noHover = window.matchMedia('(hover: none)');
+    const updateTouchMode = () => setIsTouchDevice(coarsePointer.matches || noHover.matches);
+
     window.addEventListener('resize', handleResize);
+    coarsePointer.addEventListener('change', updateTouchMode);
+    noHover.addEventListener('change', updateTouchMode);
     handleResize();
+    updateTouchMode();
 
     const kd = (e) => { keys.current[e.key] = true; };
     const ku = (e) => { keys.current[e.key] = false; };
+    const clearKeys = () => { keys.current = {}; };
     window.addEventListener('keydown', kd);
     window.addEventListener('keyup', ku);
+    window.addEventListener('blur', clearKeys);
     
     return () => { 
        window.removeEventListener('resize', handleResize);
+       coarsePointer.removeEventListener('change', updateTouchMode);
+       noHover.removeEventListener('change', updateTouchMode);
        window.removeEventListener('keydown', kd); window.removeEventListener('keyup', ku); 
+       window.removeEventListener('blur', clearKeys);
     };
   }, []);
 
@@ -509,7 +541,64 @@ function GameCanvas({
     return () => cancelAnimationFrame(reqId);
   }, [player, completed, allCompleted, readySlide, onEnterSlides]);
 
-  return <canvas ref={canvasRef} style={{display:'block'}} />;
+  return (
+    <>
+      <canvas ref={canvasRef} style={{ display: 'block' }} />
+      {isTouchDevice && (
+        <div className="touch-ui" role="group" aria-label="Mobile controls">
+          <div className="touch-dpad">
+            <button
+              className="touch-btn touch-btn-dir"
+              aria-label="Move up"
+              onPointerDown={(event) => setDirectionKey(event, 'ArrowUp', true)}
+              onPointerUp={(event) => setDirectionKey(event, 'ArrowUp', false)}
+              onPointerLeave={(event) => setDirectionKey(event, 'ArrowUp', false)}
+              onPointerCancel={(event) => setDirectionKey(event, 'ArrowUp', false)}
+            >
+              ▲
+            </button>
+            <div className="touch-dpad-middle">
+              <button
+                className="touch-btn touch-btn-dir"
+                aria-label="Move left"
+                onPointerDown={(event) => setDirectionKey(event, 'ArrowLeft', true)}
+                onPointerUp={(event) => setDirectionKey(event, 'ArrowLeft', false)}
+                onPointerLeave={(event) => setDirectionKey(event, 'ArrowLeft', false)}
+                onPointerCancel={(event) => setDirectionKey(event, 'ArrowLeft', false)}
+              >
+                ◀
+              </button>
+              <span className="touch-dpad-dot" aria-hidden="true">●</span>
+              <button
+                className="touch-btn touch-btn-dir"
+                aria-label="Move right"
+                onPointerDown={(event) => setDirectionKey(event, 'ArrowRight', true)}
+                onPointerUp={(event) => setDirectionKey(event, 'ArrowRight', false)}
+                onPointerLeave={(event) => setDirectionKey(event, 'ArrowRight', false)}
+                onPointerCancel={(event) => setDirectionKey(event, 'ArrowRight', false)}
+              >
+                ▶
+              </button>
+            </div>
+            <button
+              className="touch-btn touch-btn-dir"
+              aria-label="Move down"
+              onPointerDown={(event) => setDirectionKey(event, 'ArrowDown', true)}
+              onPointerUp={(event) => setDirectionKey(event, 'ArrowDown', false)}
+              onPointerLeave={(event) => setDirectionKey(event, 'ArrowDown', false)}
+              onPointerCancel={(event) => setDirectionKey(event, 'ArrowDown', false)}
+            >
+              ▼
+            </button>
+          </div>
+          <div className="touch-actions">
+            <button className="touch-btn touch-btn-action" aria-label="Confirm" onPointerDown={triggerConfirm}>A</button>
+            <button className="touch-btn touch-btn-cancel" aria-label="Cancel" onPointerDown={triggerCancel}>B</button>
+          </div>
+        </div>
+      )}
+    </>
+  );
 }
 
 // ================= DOM MINI GAMES =================
